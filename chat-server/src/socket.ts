@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
+import { translateMessage } from "./services/translation.js";
 
 type SendMessagePayload = {
   roomId: string;
@@ -13,6 +14,9 @@ type ChatMessage = {
   userName: string;
   originalText: string;
   translatedText: string | null;
+  sourceLang: string | null;
+  targetLang: string | null;
+  translationMs: number | null;
   createdAt: string;
 };
 
@@ -47,18 +51,25 @@ export function registerSocketHandlers(io: Server) {
       console.log(socket.id + " joined room: " + roomId);
     });
 
-    socket.on("send_message", (payload: unknown) => {
+    socket.on("send_message", async (payload: unknown) => {
       if (!isValidMessagePayload(payload)) {
         socket.emit("error_message", "メッセージ内容が不正です。");
         return;
       }
 
+      const originalText = payload.text.trim();
+
+      const translation = await translateMessage(originalText);
+
       const message: ChatMessage = {
         id: randomUUID(),
         roomId: payload.roomId.trim(),
         userName: payload.userName.trim(),
-        originalText: payload.text.trim(),
-        translatedText: null,
+        originalText,
+        translatedText: translation.translatedText,
+        sourceLang: translation.sourceLang,
+        targetLang: translation.targetLang,
+        translationMs: translation.translationMs,
         createdAt: new Date().toISOString()
       };
 
