@@ -1,4 +1,4 @@
-import { prisma } from "./db.js";
+﻿import { prisma } from "./db.js";
 
 export type CreateMessageInput = {
   roomId: string;
@@ -33,5 +33,13 @@ export async function getRoomMessages(roomId: string) {
       createdAt: "asc"
     },
     take: 100
+  });
+}
+
+export async function deleteRoomMessages(roomId: string) {
+  return prisma.message.deleteMany({
+    where: {
+      roomId
+    }
   });
 }

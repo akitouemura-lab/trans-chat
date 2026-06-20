@@ -4,7 +4,10 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { Server } from "socket.io";
 import { registerSocketHandlers } from "./socket.js";
-import { getRoomMessages } from "./services/messageRepository.js";
+import {
+  deleteRoomMessages,
+  getRoomMessages
+} from "./services/messageRepository.js";
 
 type StoredMessage = {
   id: string;
@@ -28,7 +31,8 @@ const port = Number(process.env.PORT ?? 4000);
 app.use(
   cors({
     origin: clientOrigin,
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "DELETE", "OPTIONS"]
   })
 );
 
@@ -71,6 +75,32 @@ app.get("/rooms/:roomId/messages", async (req, res) => {
     console.error("failed to get room messages:", error);
     res.status(500).json({
       message: "failed to get room messages"
+    });
+  }
+});
+
+app.delete("/rooms/:roomId/messages", async (req, res) => {
+  try {
+    const roomId = req.params.roomId.trim();
+
+    if (roomId.length === 0) {
+      res.status(400).json({
+        message: "roomId is required"
+      });
+      return;
+    }
+
+    const result = await deleteRoomMessages(roomId);
+
+    res.json({
+      message: "messages deleted",
+      roomId,
+      deletedCount: result.count
+    });
+  } catch (error) {
+    console.error("failed to delete room messages:", error);
+    res.status(500).json({
+      message: "failed to delete room messages"
     });
   }
 });

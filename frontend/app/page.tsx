@@ -32,6 +32,7 @@ export default function Home() {
   const [isConnected, setIsConnected] = useState(false);
   const [statusMessage, setStatusMessage] = useState("未接続です。");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false);
 
   async function loadHistory(targetRoomId: string) {
     try {
@@ -53,6 +54,46 @@ export default function Home() {
       setStatusMessage("履歴取得中にエラーが発生しました。");
     } finally {
       setIsLoadingHistory(false);
+    }
+  }
+
+  async function handleDeleteHistory() {
+    const trimmedRoomId = roomId.trim();
+
+    if (trimmedRoomId.length === 0) {
+      setStatusMessage("ルームIDを入力してください。");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "このルームの履歴をすべて削除しますか？"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsDeletingHistory(true);
+
+      const response = await fetch(
+        chatServerUrl + "/rooms/" + encodeURIComponent(trimmedRoomId) + "/messages",
+        {
+          method: "DELETE"
+        }
+      );
+
+      if (!response.ok) {
+        setStatusMessage("履歴の削除に失敗しました。");
+        return;
+      }
+
+      setMessages([]);
+      setStatusMessage("ルーム " + trimmedRoomId + " の履歴を削除しました。");
+    } catch {
+      setStatusMessage("履歴削除中にエラーが発生しました。");
+    } finally {
+      setIsDeletingHistory(false);
     }
   }
 
@@ -171,13 +212,22 @@ export default function Home() {
               />
             </label>
 
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <button
                 type="button"
                 onClick={handleJoinRoom}
-                className="w-full rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400"
+                className="flex-1 rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400"
               >
                 ルーム参加・履歴読込
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteHistory}
+                disabled={isDeletingHistory}
+                className="rounded-lg bg-red-500 px-4 py-2 font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-red-900"
+              >
+                {isDeletingHistory ? "削除中" : "履歴削除"}
               </button>
             </div>
           </div>
