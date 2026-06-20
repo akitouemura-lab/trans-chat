@@ -497,19 +497,15 @@ Recommended path:
 docs/images/chat-screen.png
 ```
 
-### Demo GIF
+## Demo Video
 
-Add a demo GIF here:
+Click the preview below to watch the TransChat demo video.
 
-```markdown
-![Demo](docs/images/demo.gif)
-```
+[![TransChat Demo](docs/images/chat-screen.png)](docs/videos/demo.mp4)
 
-Recommended path:
+If the preview image is not displayed, open the video directly:
 
-```text
-docs/images/demo.gif
-```
+[Watch demo video](docs/videos/demo.mp4)
 
 ---
 
