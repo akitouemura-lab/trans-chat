@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import { translateMessage } from "./services/translation.js";
+import { saveMessage } from "./services/messageRepository.js";
 
 type SendMessagePayload = {
   roomId: string;
@@ -57,23 +58,53 @@ export function registerSocketHandlers(io: Server) {
         return;
       }
 
+      const roomId = payload.roomId.trim();
+      const userName = payload.userName.trim();
       const originalText = payload.text.trim();
 
       const translation = await translateMessage(originalText);
 
-      const message: ChatMessage = {
-        id: randomUUID(),
-        roomId: payload.roomId.trim(),
-        userName: payload.userName.trim(),
-        originalText,
-        translatedText: translation.translatedText,
-        sourceLang: translation.sourceLang,
-        targetLang: translation.targetLang,
-        translationMs: translation.translationMs,
-        createdAt: new Date().toISOString()
-      };
+      try {
+        const savedMessage = await saveMessage({
+          roomId,
+          userName,
+          originalText,
+          translatedText: translation.translatedText,
+          sourceLang: translation.sourceLang,
+          targetLang: translation.targetLang,
+          translationMs: translation.translationMs
+        });
 
-      io.to(message.roomId).emit("receive_message", message);
+        const message: ChatMessage = {
+          id: savedMessage.id,
+          roomId: savedMessage.roomId,
+          userName: savedMessage.userName,
+          originalText: savedMessage.originalText,
+          translatedText: savedMessage.translatedText,
+          sourceLang: savedMessage.sourceLang,
+          targetLang: savedMessage.targetLang,
+          translationMs: savedMessage.translationMs,
+          createdAt: savedMessage.createdAt.toISOString()
+        };
+
+        io.to(message.roomId).emit("receive_message", message);
+      } catch (error) {
+        console.error("failed to save message:", error);
+
+        const fallbackMessage: ChatMessage = {
+          id: randomUUID(),
+          roomId,
+          userName,
+          originalText,
+          translatedText: translation.translatedText,
+          sourceLang: translation.sourceLang,
+          targetLang: translation.targetLang,
+          translationMs: translation.translationMs,
+          createdAt: new Date().toISOString()
+        };
+
+        io.to(roomId).emit("receive_message", fallbackMessage);
+      }
     });
 
     socket.on("disconnect", () => {
