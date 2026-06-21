@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/12059e9f-63a1-4848-91fe-81fac8521008
+
 # TransChat
 
 **A real-time bilingual chat application powered by local translation and a service-oriented architecture.**
@@ -506,6 +510,10 @@ Click the preview below to watch the TransChat demo video.
 If the preview image is not displayed, open the video directly:
 
 [Watch demo video](docs/videos/demo.mp4)
+
+
+https://github.com/user-attachments/assets/fb0062d0-4713-4cc3-b4bd-af9b521339eb
+
 
 ---
 
