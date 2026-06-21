@@ -10,13 +10,7 @@ It combines realtime messaging, local machine translation, and persistent messag
 
 ---
 
-## Demo Video
 
-The demo below shows TransChat running locally, sending messages in real time, translating between English and Japanese, and preserving message history.
-
-https://github.com/user-attachments/assets/fb0062d0-4713-4cc3-b4bd-af9b521339eb
-
----
 
 ## Overview
 
