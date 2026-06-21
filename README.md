@@ -8,6 +8,14 @@ It combines realtime messaging, local machine translation, and persistent messag
 
 ---
 
+## Demo Video
+
+The demo below shows TransChat running locally, sending messages in real time, translating between English and Japanese, and preserving message history.
+
+https://github.com/user-attachments/assets/fb0062d0-4713-4cc3-b4bd-af9b521339eb
+
+---
+
 ## Overview
 
 Modern online communication often crosses language boundaries. However, common translation workflows are still fragmented.
@@ -485,7 +493,7 @@ This local-first approach helps reduce cost and keeps the translation layer unde
 
 ### Chat UI
 
-Add a screenshot here:
+A screenshot can be added here:
 
 ```markdown
 ![Chat UI](docs/images/chat-screen.png)
@@ -496,16 +504,6 @@ Recommended path:
 ```text
 docs/images/chat-screen.png
 ```
-
-## Demo Video
-
-Click the preview below to watch the TransChat demo video.
-
-[![TransChat Demo](docs/images/chat-screen.png)](docs/videos/demo.mp4)
-
-If the preview image is not displayed, open the video directly:
-
-[Watch demo video](docs/videos/demo.mp4)
 
 ---
 
