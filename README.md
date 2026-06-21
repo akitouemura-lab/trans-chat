@@ -1,3 +1,5 @@
+
+
 # TransChat
 
 **A real-time bilingual chat application powered by local translation and a service-oriented architecture.**
@@ -505,6 +507,23 @@ Recommended path:
 docs/images/chat-screen.png
 ```
 
+<<<<<<< HEAD
+## Demo Video
+
+Click the preview below to watch the TransChat demo video.
+
+[![TransChat Demo](docs/images/chat-screen.png)](docs/videos/demo.mp4)
+
+If the preview image is not displayed, open the video directly:
+
+[Watch demo video](docs/videos/demo.mp4)
+
+
+https://github.com/user-attachments/assets/fb0062d0-4713-4cc3-b4bd-af9b521339eb
+
+
+=======
+>>>>>>> b226c57 (Finalize README)
 ---
 
 ## Roadmap
