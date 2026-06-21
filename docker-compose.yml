@@ -10,6 +10,44 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transchat -d transchat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  translate-service:
+    build:
+      context: ./translate-service
+    container_name: trans-chat-translate-service
+    ports:
+      - "5000:5000"
+
+  chat-server:
+    build:
+      context: ./chat-server
+    container_name: trans-chat-chat-server
+    environment:
+      PORT: 4000
+      CLIENT_ORIGIN: http://localhost:3000
+      TRANSLATE_SERVICE_URL: http://translate-service:5000
+      DATABASE_URL: postgresql://transchat:transchat_password@postgres:5432/transchat?schema=public
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      translate-service:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: trans-chat-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - chat-server
 
 volumes:
   postgres-data:
