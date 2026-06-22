@@ -51,7 +51,11 @@ This allows users to communicate across languages more naturally and quickly.
 
 The following video demonstrates the basic chat flow and real-time translation behavior of TransChat.
 
-[Watch the demo video](docs/videos/demo.mp4)
+
+
+https://github.com/user-attachments/assets/bc564862-96a6-43ce-9edb-2756d3ee8cfc
+
+
 ---
 ## Core Concept
 
