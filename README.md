@@ -1,62 +1,84 @@
+﻿# TransChat
 
+**TransChat** is a real-time bilingual chat application that helps English and Japanese users communicate smoothly by translating messages directly inside the chat experience.
 
-# TransChat
-
-**A real-time bilingual chat application powered by local translation and a service-oriented architecture.**
-
-TransChat is a full-stack web application that enables real-time communication between English and Japanese users.
-
-It combines realtime messaging, local machine translation, and persistent message history into a compact, extensible system built with Next.js, Socket.IO, FastAPI, Argos Translate, PostgreSQL, and Prisma.
+The project combines **real-time messaging**, **local machine translation**, and **persistent message storage** into a small full-stack system built with **Next.js**, **Node.js**, **Socket.IO**, **FastAPI**, **Argos Translate**, **PostgreSQL**, and **Prisma**.
 
 ---
 
+## Table of Contents
 
+* [Overview](#overview)
+* [Core Concept](#core-concept)
+* [Features](#features)
+* [Tech Stack](#tech-stack)
+* [Architecture](#architecture)
+* [Project Structure](#project-structure)
+* [Requirements](#requirements)
+* [Quick Start](#quick-start)
+* [Running the Application](#running-the-application)
+* [Usage Examples](#usage-examples)
+* [Development Commands](#development-commands)
+* [Design Notes](#design-notes)
+* [Roadmap](#roadmap)
+* [Contributing](#contributing)
+* [Limitations](#limitations)
+* [License](#license)
+* [Author](#author)
+
+---
 
 ## Overview
 
-Modern online communication often crosses language boundaries. However, common translation workflows are still fragmented.
+Modern online communication often crosses language boundaries. However, many translation workflows still require users to leave the conversation, open a translation tool, copy and paste text, translate it, and then return to the chat.
 
-Users often need to copy a message, open a translation tool, paste the text, translate it, and then return to the conversation.
+**TransChat** solves this problem by embedding translation directly into the chat flow.
 
-TransChat solves this by embedding translation directly into the chat experience.
+When a user sends a message, the system:
 
-When a user sends a message, the system detects whether the text is English or Japanese, sends it to a local translation service, stores both the original and translated text, and broadcasts the result to the room in real time.
+1. Receives the message in real time.
+2. Detects whether the text is English or Japanese.
+3. Sends the text to a local translation service.
+4. Stores both the original and translated message.
+5. Broadcasts the result to users in the same room.
 
----
-
-## Core Value
-
-TransChat is not just a chat UI.
-
-It is designed as a small service-oriented full-stack system with clearly separated responsibilities:
-
-* Realtime communication
-* Local translation processing
-* Database persistence
-* Frontend interaction
-* Developer-friendly local startup
-
-This architecture makes the project easy to understand, maintain, extend, and explain as a technical portfolio project.
+This allows users to communicate across languages more naturally and quickly.
 
 ---
 
-## Key Features
+## Core Concept
 
-### Real-time Chat
+TransChat is designed around one simple idea:
 
-* Room-based realtime messaging
+> Make cross-language communication feel immediate, natural, and accessible.
+
+The project focuses on:
+
+* Reducing language barriers in chat communication.
+* Avoiding paid translation APIs.
+* Building a clear full-stack architecture.
+* Separating responsibilities between frontend, backend, translation service, and database.
+* Creating a portfolio-friendly project that is easy to understand and explain.
+
+---
+
+## Features
+
+### Real-Time Chat
+
+* Room-based real-time messaging
 * Socket.IO-based bidirectional communication
 * Instant message delivery
 * Connection status display
-* Separate UI layout for own messages and other users' messages
+* Separate layout for own messages and other users' messages
 
 ### Automatic Translation
 
 * English to Japanese translation
 * Japanese to English translation
 * Simple language detection
-* Translation latency measurement
 * Local translation using Argos Translate
+* Translation latency measurement
 * No paid translation API required
 
 ### Persistent Message History
@@ -67,16 +89,33 @@ This architecture makes the project easy to understand, maintain, extend, and ex
 * Message reload after page refresh
 * Original text and translated text stored together
 
-### Service-Oriented Design
+### Service-Oriented Architecture
 
-The application is split into independent layers:
+The application is divided into independent layers:
 
 * Frontend
 * Chat server
 * Translation service
 * Database
 
-Each layer has a focused responsibility, which keeps the system easier to debug and extend.
+Each layer has a clear responsibility, making the project easier to debug, extend, and explain.
+
+---
+
+## Tech Stack
+
+| Area                    | Technology                        |
+| ----------------------- | --------------------------------- |
+| Frontend                | Next.js, TypeScript, Tailwind CSS |
+| Real-time Communication | Socket.IO                         |
+| Backend                 | Node.js, Express, TypeScript      |
+| Translation API         | Python, FastAPI, Uvicorn          |
+| Translation Engine      | Argos Translate                   |
+| Database                | PostgreSQL                        |
+| ORM                     | Prisma                            |
+| Package Manager         | pnpm                              |
+| Local Infrastructure    | Docker Compose                    |
+| Version Control         | Git, GitHub                       |
 
 ---
 
@@ -86,7 +125,7 @@ Each layer has a focused responsibility, which keeps the system easier to debug 
 flowchart LR
     Browser[Browser / Next.js UI]
     ChatServer[Node.js Chat Server]
-    TranslateService[FastAPI Translate Service]
+    TranslateService[FastAPI Translation Service]
     TranslationEngine[Argos Translate]
     Database[(PostgreSQL)]
 
@@ -97,22 +136,24 @@ flowchart LR
     Database --> ChatServer
 ```
 
----
+### Message Flow
 
-## Tech Stack
+```mermaid
+sequenceDiagram
+    participant User as User
+    participant Frontend as Next.js Frontend
+    participant Server as Node.js Chat Server
+    participant Translate as FastAPI Translation Service
+    participant DB as PostgreSQL
 
-| Area                   | Technology                        |
-| ---------------------- | --------------------------------- |
-| Frontend               | Next.js, TypeScript, Tailwind CSS |
-| Realtime Communication | Socket.IO                         |
-| Backend                | Node.js, Express, TypeScript      |
-| Translation API        | Python, FastAPI, Uvicorn          |
-| Translation Engine     | Argos Translate                   |
-| Database               | PostgreSQL                        |
-| ORM                    | Prisma                            |
-| Package Manager        | pnpm                              |
-| Local Infrastructure   | Docker Compose for PostgreSQL     |
-| Version Control        | Git, GitHub                       |
+    User->>Frontend: Send message
+    Frontend->>Server: Emit Socket.IO event
+    Server->>Translate: Request translation
+    Translate-->>Server: Return translated text
+    Server->>DB: Save message
+    Server-->>Frontend: Broadcast message
+    Frontend-->>User: Display original and translated text
+```
 
 ---
 
@@ -120,72 +161,192 @@ flowchart LR
 
 ```text
 trans-chat/
-|-- frontend/
-|   |-- app/
-|   |-- package.json
-|   `-- ...
-|-- chat-server/
-|   |-- src/
-|   |   |-- index.ts
-|   |   |-- socket.ts
-|   |   `-- services/
-|   |-- prisma/
-|   |   `-- schema.prisma
-|   `-- package.json
-|-- translate-service/
-|   |-- app/
-|   |   |-- main.py
-|   |   |-- translator.py
-|   |   `-- schemas.py
-|   `-- requirements.txt
-|-- docker-compose.yml
-|-- start-dev.ps1
-|-- stop-dev.ps1
-`-- README.md
+├── frontend/
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   └── package.json
+│
+├── chat-server/
+│   ├── src/
+│   │   ├── index.ts
+│   │   ├── socket.ts
+│   │   ├── routes/
+│   │   └── services/
+│   ├── prisma/
+│   │   └── schema.prisma
+│   └── package.json
+│
+├── translate-service/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── translator.py
+│   │   └── schemas.py
+│   └── requirements.txt
+│
+├── docker-compose.yml
+├── start-dev.ps1
+├── stop-dev.ps1
+└── README.md
 ```
 
 ---
 
-## How It Works
+## Requirements
 
-### Message Flow
+Before running the project, install the following tools:
+
+* Node.js
+* pnpm
+* Python 3.11
+* Docker Desktop
+* Git
+
+You can check your environment with the following commands:
+
+```powershell
+node -v
+pnpm.cmd -v
+py -0p
+docker --version
+docker compose version
+git --version
+```
+
+---
+
+## Quick Start
+
+### 1. Clone the Repository
+
+```powershell
+git clone https://github.com/akitouemura-lab/trans-chat.git
+cd trans-chat
+```
+
+### 2. Create the Environment File
+
+Create a `.env` file inside the `chat-server` directory.
+
+```powershell
+New-Item -ItemType File -Path .\chat-server\.env
+```
+
+Add the following content:
+
+```env
+PORT=4000
+CLIENT_ORIGIN=http://localhost:3000
+TRANSLATE_SERVICE_URL=http://localhost:5000
+DATABASE_URL=postgresql://transchat:transchat_password@localhost:5432/transchat?schema=public
+```
+
+### 3. Start PostgreSQL
+
+```powershell
+docker compose up -d postgres
+```
+
+### 4. Set Up the Chat Server
+
+```powershell
+cd chat-server
+pnpm.cmd install
+pnpm.cmd exec prisma generate
+pnpm.cmd exec prisma migrate dev --name init_messages
+cd ..
+```
+
+### 5. Set Up the Translation Service
+
+```powershell
+cd translate-service
+py -3.11 -m venv venv
+.\venv\Scripts\python.exe -m pip install --upgrade pip
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+cd ..
+```
+
+### 6. Set Up the Frontend
+
+```powershell
+cd frontend
+pnpm.cmd install
+cd ..
+```
+
+---
+
+## Running the Application
+
+### Easy Start for Windows
+
+This repository includes helper scripts for local development.
+
+Start all services:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
+
+Stop all services:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
+```
+
+After startup, open the frontend in your browser:
 
 ```text
-User sends a message
-  -> Frontend emits a Socket.IO event
-  -> Chat server receives and validates the message
-  -> Chat server requests translation from FastAPI
-  -> Translate service translates text using Argos Translate
-  -> Chat server saves the message to PostgreSQL
-  -> Chat server broadcasts the message to the room
-  -> Frontend renders original text, translated text, and metadata
+http://localhost:3000
 ```
 
 ---
 
-## Database Model
+## Manual Start
 
-The main message model stores both the original message and the translated result.
+You can also start each service manually.
 
-```prisma
-model Message {
-  id             String   @id @default(uuid())
-  roomId         String
-  userName       String
-  originalText   String
-  translatedText String?
-  sourceLang     String?
-  targetLang     String?
-  translationMs  Int?
-  createdAt      DateTime @default(now())
+### 1. Start PostgreSQL
 
-  @@index([roomId, createdAt])
-}
+```powershell
+docker compose up -d postgres
+```
+
+### 2. Start the Translation Service
+
+```powershell
+cd translate-service
+.\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5000
+```
+
+### 3. Start the Chat Server
+
+Open another terminal:
+
+```powershell
+cd chat-server
+pnpm.cmd dev
+```
+
+### 4. Start the Frontend
+
+Open another terminal:
+
+```powershell
+cd frontend
+pnpm.cmd dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
 ```
 
 ---
 
-## API Examples
+## Usage Examples
 
 ### Chat Server Health Check
 
@@ -243,11 +404,9 @@ Example response:
 }
 ```
 
----
+### Socket.IO Message Example
 
-## Socket.IO Example
-
-Client-side message event:
+Client-side event:
 
 ```ts
 socket.emit("send_message", {
@@ -259,155 +418,18 @@ socket.emit("send_message", {
 
 Server-side broadcast payload:
 
-```ts
+```json
 {
-  id: "uuid",
-  roomId: "room1",
-  userName: "user1",
-  originalText: "I want to build a web application.",
-  translatedText: "Webアプリケーションを作りたいです。",
-  sourceLang: "en",
-  targetLang: "ja",
-  translationMs: 95,
-  createdAt: "2026-06-21T00:00:00.000Z"
+  "id": "uuid",
+  "roomId": "room1",
+  "userName": "user1",
+  "originalText": "I want to build a web application.",
+  "translatedText": "Webアプリケーションを作りたいです。",
+  "sourceLang": "en",
+  "targetLang": "ja",
+  "translationMs": 95,
+  "createdAt": "2026-06-21T00:00:00.000Z"
 }
-```
-
----
-
-## Quick Start
-
-### Requirements
-
-Install the following tools:
-
-* Node.js
-* pnpm
-* Python 3.11
-* Docker Desktop
-* Git
-
-Check your environment:
-
-```powershell
-node -v
-pnpm.cmd -v
-py -0p
-docker --version
-docker compose version
-git --version
-```
-
----
-
-## Installation
-
-### 1. Clone the Repository
-
-```powershell
-git clone https://github.com/akitouemura-lab/trans-chat.git
-cd trans-chat
-```
-
-### 2. Create Environment File
-
-Create `chat-server/.env`:
-
-```env
-PORT=4000
-CLIENT_ORIGIN=http://localhost:3000
-TRANSLATE_SERVICE_URL=http://localhost:5000
-DATABASE_URL=postgresql://transchat:transchat_password@localhost:5432/transchat?schema=public
-```
-
-### 3. Start PostgreSQL
-
-```powershell
-docker compose up -d postgres
-```
-
-### 4. Setup Chat Server
-
-```powershell
-cd chat-server
-pnpm.cmd install
-pnpm.cmd exec prisma generate
-pnpm.cmd exec prisma migrate dev --name init_messages
-```
-
-### 5. Setup Translation Service
-
-```powershell
-cd ../translate-service
-py -3.11 -m venv venv
-.\venv\Scripts\python.exe -m pip install --upgrade pip
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-### 6. Setup Frontend
-
-```powershell
-cd ../frontend
-pnpm.cmd install
-```
-
----
-
-## Running the Project
-
-### Easy Start for Windows
-
-This repository includes helper scripts for local development.
-
-Start all services:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
-```
-
-Stop all services:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
-```
-
-After startup, open:
-
-```text
-http://localhost:3000
-```
-
----
-
-## Manual Start
-
-If you prefer to start each service manually, use the following commands.
-
-### PostgreSQL
-
-```powershell
-docker compose up -d postgres
-```
-
-### Translation Service
-
-```powershell
-cd translate-service
-.\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5000
-```
-
-### Chat Server
-
-```powershell
-cd chat-server
-pnpm.cmd dev
-```
-
-### Frontend
-
-```powershell
-cd frontend
-pnpm.cmd dev
 ```
 
 ---
@@ -450,15 +472,15 @@ docker compose down
 
 ### Translation as an Independent Service
 
-The translation logic is intentionally isolated from the Node.js chat server.
+The translation logic is separated from the Node.js chat server.
 
-Instead of embedding translation directly into the realtime server, the chat server communicates with a dedicated FastAPI service over HTTP.
+Instead of embedding translation directly into the real-time server, the chat server communicates with a dedicated FastAPI service over HTTP.
 
-This makes the translation layer replaceable. Argos Translate could later be replaced with another local model, an external API, or an LLM-based translation service.
+This makes the translation layer replaceable. In the future, Argos Translate could be replaced with another local model, an external translation API, or an LLM-based translation service.
 
-### Realtime First, Persistence Second
+### Real-Time First, Persistence Second
 
-The system is designed to preserve realtime responsiveness while still storing messages in PostgreSQL.
+The system is designed to preserve real-time responsiveness while still storing messages in PostgreSQL.
 
 Each message follows a clear pipeline:
 
@@ -469,13 +491,13 @@ validate
   -> broadcast
 ```
 
-This approach makes the message flow explicit and easier to debug.
+This makes the message flow explicit and easier to debug.
 
 ### Failure-Tolerant Messaging
 
-Translation may fail due to model limitations, service startup delay, or unsupported input.
+Translation may fail because of model limitations, service startup delay, or unsupported input.
 
-The system is designed so that a translation failure does not completely break the chat experience. The original message can still be handled, and fallback information can be displayed.
+The system is designed so that translation failure does not completely break the chat experience. The original message can still be handled, and fallback information can be displayed.
 
 ### Local-First Translation
 
@@ -483,41 +505,6 @@ Using Argos Translate makes the project suitable for learning, prototyping, and 
 
 This local-first approach helps reduce cost and keeps the translation layer under developer control.
 
----
-
-## Screenshots
-
-### Chat UI
-
-A screenshot can be added here:
-
-```markdown
-![Chat UI](docs/images/chat-screen.png)
-```
-
-Recommended path:
-
-```text
-docs/images/chat-screen.png
-```
-
-<<<<<<< HEAD
-## Demo Video
-
-Click the preview below to watch the TransChat demo video.
-
-[![TransChat Demo](docs/images/chat-screen.png)](docs/videos/demo.mp4)
-
-If the preview image is not displayed, open the video directly:
-
-[Watch demo video](docs/videos/demo.mp4)
-
-
-https://github.com/user-attachments/assets/fb0062d0-4713-4cc3-b4bd-af9b521339eb
-
-
-=======
->>>>>>> b226c57 (Finalize README)
 ---
 
 ## Roadmap
@@ -535,32 +522,54 @@ https://github.com/user-attachments/assets/fb0062d0-4713-4cc3-b4bd-af9b521339eb
 
 ---
 
-## Contribution
+## Contributing
 
 Contributions are welcome.
 
-1. Fork this repository
-2. Create a feature branch
-3. Commit your changes
-4. Open a pull request
+### How to Contribute
+
+1. Fork this repository.
+2. Create a feature branch.
+3. Make your changes.
+4. Run checks before committing.
+5. Commit your changes.
+6. Push your branch.
+7. Open a pull request.
 
 ```powershell
 git checkout -b feature/your-feature
+git add .
 git commit -m "Add your feature"
 git push origin feature/your-feature
 ```
 
 For larger changes, please open an issue first to discuss the design direction.
 
+### Contribution Guidelines
+
+Please keep contributions clear, focused, and easy to review.
+
+Recommended practices:
+
+* Use meaningful commit messages.
+* Keep pull requests small when possible.
+* Add comments only when they improve readability.
+* Update documentation when behavior changes.
+* Avoid committing environment files such as `.env`.
+
 ---
 
 ## Limitations
 
-This project currently focuses on architecture, realtime communication, translation integration, and database persistence.
+This project currently focuses on architecture, real-time communication, translation integration, and database persistence.
 
-Translation quality may vary, especially for very short words or phrases. Longer sentences generally produce more stable translation results.
+Current limitations include:
 
-At the moment, Docker Compose is mainly used for PostgreSQL. Frontend, chat server, and translation service are started through local development commands or helper scripts.
+* Translation quality may vary depending on the input text.
+* Very short phrases may produce unstable translation results.
+* The current language focus is English and Japanese.
+* Docker Compose is mainly used for PostgreSQL.
+* Frontend, chat server, and translation service are currently started through local commands or helper scripts.
 
 ---
 
@@ -568,7 +577,7 @@ At the moment, Docker Compose is mainly used for PostgreSQL. Frontend, chat serv
 
 This project is currently intended for learning and portfolio purposes.
 
-If this project is reused or distributed, an appropriate license should be added.
+No formal open-source license has been added yet. If this project is reused, distributed, or published as an open-source project, an appropriate license such as the MIT License should be added.
 
 ---
 
@@ -578,12 +587,15 @@ Developed by **akito uemura**
 
 GitHub: [akitouemura-lab](https://github.com/akitouemura-lab)
 
+Repository: [trans-chat](https://github.com/akitouemura-lab/trans-chat)
+
 ---
 
 ## Summary
 
-TransChat demonstrates how realtime communication, local translation, and persistent storage can be combined into a practical full-stack application.
+TransChat demonstrates how real-time communication, local translation, and persistent storage can be combined into a practical full-stack web application.
 
 The goal is simple:
 
-**Make cross-language communication feel immediate, natural, and technically elegant.**
+> Make cross-language communication feel immediate, natural, and technically elegant.
+
