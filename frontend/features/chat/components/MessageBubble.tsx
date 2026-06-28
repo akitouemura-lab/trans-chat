@@ -27,13 +27,21 @@ type MessageBubbleProps = {
   message: DisplayMessage;
   isMine: boolean;
   isDarkMode: boolean;
+  isPhraseSaved: (message: DisplayMessage) => boolean;
+  onSavePhrase: (message: DisplayMessage) => boolean;
 };
 
 export function MessageBubble({
   message,
   isMine,
-  isDarkMode
+  isDarkMode,
+  isPhraseSaved,
+  onSavePhrase
 }: MessageBubbleProps) {
+  const canSavePhrase =
+    !isPendingMessage(message) && typeof message.translatedText === "string";
+  const phraseSaved = canSavePhrase && isPhraseSaved(message);
+
   return (
     <div className={isMine ? "flex justify-end" : "flex justify-start"}>
       <div
@@ -88,6 +96,17 @@ export function MessageBubble({
                 : "Translating..."
               : message.translatedText ?? "Translation unavailable."}
           </p>
+
+          {canSavePhrase && (
+            <button
+              type="button"
+              onClick={() => onSavePhrase(message)}
+              disabled={phraseSaved}
+              className="mt-3 rounded-lg border border-white/30 px-3 py-1 text-xs font-semibold hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {phraseSaved ? "Saved phrase" : "Save phrase"}
+            </button>
+          )}
         </div>
       </div>
     </div>

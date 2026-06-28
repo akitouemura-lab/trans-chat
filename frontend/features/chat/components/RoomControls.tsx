@@ -5,6 +5,8 @@ type RoomControlsProps = {
   userName: string;
   roomInput: string;
   translationDirection: TranslationDirection;
+  inviteLink: string;
+  inviteStatusMessage: string;
   isConnected: boolean;
   isLoadingHistory: boolean;
   isDeletingHistory: boolean;
@@ -17,6 +19,7 @@ type RoomControlsProps = {
   onTranslationDirectionChange: Dispatch<SetStateAction<TranslationDirection>>;
   onJoinRoom: () => void;
   onCreateRoom: () => void;
+  onCopyInviteLink: () => void;
   onDeleteHistory: () => void;
 };
 
@@ -24,6 +27,8 @@ export function RoomControls({
   userName,
   roomInput,
   translationDirection,
+  inviteLink,
+  inviteStatusMessage,
   isConnected,
   isLoadingHistory,
   isDeletingHistory,
@@ -36,11 +41,18 @@ export function RoomControls({
   onTranslationDirectionChange,
   onJoinRoom,
   onCreateRoom,
+  onCopyInviteLink,
   onDeleteHistory
 }: RoomControlsProps) {
+  const visibleStatusMessage = inviteStatusMessage
+    ? inviteStatusMessage
+    : isLoadingHistory
+      ? "Loading room history..."
+      : statusMessage;
+
   return (
     <section className={"mb-4 rounded-2xl border p-4 shadow-xl " + panelClass}>
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto_auto]">
+      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto_auto_auto]">
         <label className="flex flex-col gap-1">
           <span className={"text-sm " + mutedTextClass}>User name</span>
           <input
@@ -95,6 +107,16 @@ export function RoomControls({
         >
           Create
         </button>
+
+        <button
+          type="button"
+          onClick={onCopyInviteLink}
+          disabled={!inviteLink}
+          title={inviteLink}
+          className="rounded-lg border border-emerald-500 px-4 py-2 font-semibold text-emerald-400 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:border-slate-500 disabled:text-slate-500"
+        >
+          Copy invite
+        </button>
       </div>
 
       <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -107,7 +129,7 @@ export function RoomControls({
             }
           />
           <span className={mutedTextClass}>
-            {isLoadingHistory ? "Loading room history..." : statusMessage}
+            {visibleStatusMessage}
           </span>
         </div>
 

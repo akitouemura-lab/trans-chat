@@ -7,6 +7,8 @@ type MessageListProps = {
   isDarkMode: boolean;
   panelClass: string;
   mutedTextClass: string;
+  isPhraseSaved: (message: DisplayMessage) => boolean;
+  onSavePhrase: (message: DisplayMessage) => boolean;
 };
 
 export function MessageList({
@@ -14,7 +16,9 @@ export function MessageList({
   userName,
   isDarkMode,
   panelClass,
-  mutedTextClass
+  mutedTextClass,
+  isPhraseSaved,
+  onSavePhrase
 }: MessageListProps) {
   return (
     <section
@@ -37,6 +41,8 @@ export function MessageList({
               message={message}
               isMine={message.userName === userName.trim()}
               isDarkMode={isDarkMode}
+              isPhraseSaved={isPhraseSaved}
+              onSavePhrase={onSavePhrase}
             />
           ))}
         </div>

@@ -37,3 +37,26 @@ export type MessageStatusPayload = {
   status: "translating" | "saved" | "error";
   message?: string;
 };
+
+export type TranslationMemoryItem = {
+  id: string;
+  messageId: string;
+  roomId: string;
+  userName: string;
+  originalText: string;
+  translatedText: string;
+  sourceLang: string | null;
+  targetLang: string | null;
+  createdAt: string;
+};
+
+export type SavedPhrase = {
+  id: string;
+  originalText: string;
+  translatedText: string;
+  sourceLang: string | null;
+  targetLang: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  useCount: number;
+};

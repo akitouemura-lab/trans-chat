@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TranslationDirection } from "../lib/types";
+import { validateRoomId } from "../lib/validation";
 
 const USER_NAME_KEY = "transchat-userName";
 const ROOM_ID_KEY = "transchat-roomId";
@@ -15,12 +16,22 @@ function getStoredValue(key: string): string | null {
   return window.localStorage.getItem(key);
 }
 
+function getRoomIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const roomId = new URLSearchParams(window.location.search).get("room");
+  if (!roomId) return null;
+
+  const trimmedRoomId = roomId.trim();
+  return validateRoomId(trimmedRoomId) === null ? trimmedRoomId : null;
+}
+
 function getInitialUserName(): string {
   return getStoredValue(USER_NAME_KEY) ?? "user1";
 }
 
 function getInitialRoomId(): string {
-  return getStoredValue(ROOM_ID_KEY) ?? "room1";
+  return getRoomIdFromUrl() ?? getStoredValue(ROOM_ID_KEY) ?? "room1";
 }
 
 function getInitialTheme(): boolean {
@@ -48,6 +59,9 @@ export function useLocalChatSettings() {
 
   useEffect(() => {
     window.localStorage.setItem(ROOM_ID_KEY, activeRoomId);
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("room", activeRoomId);
+    window.history.replaceState(null, "", nextUrl.toString());
   }, [activeRoomId]);
 
   useEffect(() => {

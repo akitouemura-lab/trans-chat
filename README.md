@@ -42,6 +42,7 @@ TransChat focuses on keeping the user experience simple while making the interna
 
 - Room-based realtime messaging with Socket.IO
 - Room creation and room joining from the UI
+- Invite link copying with the active room ID in the URL
 - Connection status display
 - Separate rendering for your messages and messages from other users
 - Safe room switching so a socket leaves the previous room before joining the next one
@@ -75,6 +76,8 @@ TransChat focuses on keeping the user experience simple while making the interna
 
 - Dark/light mode
 - Local browser persistence for user name, room ID, theme, and translation direction
+- Local translation history for recently translated messages
+- Saved phrases for frequently used bilingual expressions
 - Message input validation
 - Responsive chat layout
 
@@ -167,12 +170,15 @@ trans-chat/
 |   |       |-- components/
 |   |       |   |-- ChatHeader.tsx
 |   |       |   |-- RoomControls.tsx
+|   |       |   |-- TranslationMemoryPanel.tsx
 |   |       |   |-- MessageList.tsx
 |   |       |   |-- MessageBubble.tsx
 |   |       |   `-- MessageInput.tsx
 |   |       |-- hooks/
 |   |       |   |-- useChatSocket.ts
-|   |       |   `-- useLocalChatSettings.ts
+|   |       |   |-- useLocalChatSettings.ts
+|   |       |   |-- useRoomInviteLink.ts
+|   |       |   `-- useTranslationMemory.ts
 |   |       `-- lib/
 |   |           |-- types.ts
 |   |           `-- validation.ts
@@ -432,15 +438,19 @@ This value tells the browser where the Socket.IO chat server is running. When te
 1. Open `http://localhost:3000`.
 2. Enter a user name.
 3. Enter a room ID and click `Join room`, or click `Create` to generate a room.
-4. Select translation direction:
+4. Click `Copy invite` to share a URL that opens the same room.
+5. Select translation direction:
    - `Auto detect`
    - `English -> Japanese`
    - `Japanese -> English`
-5. Type a message and click `Send`.
-6. The UI shows a pending state while the message is sent and translated.
-7. When the server broadcasts the saved message, the frontend replaces the pending message using `clientMessageId`.
+6. Type a message and click `Send`.
+7. The UI shows a pending state while the message is sent and translated.
+8. When the server broadcasts the saved message, the frontend replaces the pending message using `clientMessageId`.
+9. Use `Save phrase` or the translation memory panel to store frequently used expressions locally.
 
 Room history is loaded automatically after joining a room. The chat server returns the latest 100 messages in chronological display order.
+
+Translation history and saved phrases are stored in the browser with `localStorage`. They are useful for personal reuse during demos, but they are not synchronized between devices.
 
 ## API Examples
 
@@ -701,6 +711,7 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 - Authentication and user authorization are not implemented yet.
 - The current language focus is English and Japanese.
 - Argos Translate quality can vary, especially for short phrases, informal chat text, and ambiguous wording.
+- Translation history and saved phrases are local to the current browser because authentication and user accounts are not implemented yet.
 - The local PostgreSQL credentials in `.env.example` and `docker-compose.yml` are development credentials, not production credentials.
 - Room deletion is a coarse admin operation, not a full permission model.
 - First-time translation service startup can take time because language packages may need to be checked or installed.

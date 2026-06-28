@@ -34,16 +34,19 @@ type UseChatSocketParams = {
   userName: string;
   translationDirection: TranslationDirection;
   onRoomChange: (roomId: string) => void;
+  onTranslatedMessages?: (messages: DisplayMessage[]) => void;
 };
 
 export function useChatSocket({
   activeRoomId,
   userName,
   translationDirection,
-  onRoomChange
+  onRoomChange,
+  onTranslatedMessages
 }: UseChatSocketParams) {
   const socketRef = useRef<Socket | null>(null);
   const activeRoomRef = useRef(activeRoomId);
+  const onTranslatedMessagesRef = useRef(onTranslatedMessages);
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -55,6 +58,10 @@ export function useChatSocket({
   useEffect(() => {
     activeRoomRef.current = activeRoomId;
   }, [activeRoomId]);
+
+  useEffect(() => {
+    onTranslatedMessagesRef.current = onTranslatedMessages;
+  }, [onTranslatedMessages]);
 
   useEffect(() => {
     const socket = io(chatServerUrl, {
@@ -81,6 +88,7 @@ export function useChatSocket({
 
     socket.on("room_history", (history: ChatMessage[]) => {
       setMessages(history);
+      onTranslatedMessagesRef.current?.(history);
       setIsLoadingHistory(false);
     });
 
@@ -112,6 +120,7 @@ export function useChatSocket({
       });
 
       setIsSending(false);
+      onTranslatedMessagesRef.current?.([message]);
     });
 
     socket.on("message_status", (payload: MessageStatusPayload) => {
