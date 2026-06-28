@@ -1,8 +1,11 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from app.schemas import TranslateRequest, TranslateResponse
 from app.translator import install_language_packages, translate_text
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -42,7 +45,8 @@ def translate(request: TranslateRequest) -> TranslateResponse:
         )
 
     except Exception as error:
+        logger.exception("translation failed")
         raise HTTPException(
             status_code=500,
-            detail="Translation failed: " + str(error),
-        )
+            detail="Translation failed",
+        ) from error

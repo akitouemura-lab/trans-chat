@@ -27,6 +27,7 @@ const app = express();
 
 const clientOrigin = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
 const port = Number(process.env.PORT ?? 4000);
+const adminActionsEnabled = process.env.ENABLE_ADMIN_ACTIONS === "true";
 
 app.use(
   cors({
@@ -80,6 +81,13 @@ app.get("/rooms/:roomId/messages", async (req, res) => {
 });
 
 app.delete("/rooms/:roomId/messages", async (req, res) => {
+  if (!adminActionsEnabled) {
+    res.status(403).json({
+      message: "admin actions disabled"
+    });
+    return;
+  }
+
   try {
     const roomId = req.params.roomId.trim();
 

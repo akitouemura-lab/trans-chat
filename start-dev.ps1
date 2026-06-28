@@ -1,6 +1,82 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
-$projectRoot = "D:\trans-chat"
+$projectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
+
+function ConvertTo-PowerShellLiteral {
+  param([Parameter(Mandatory = $true)][string]$Value)
+
+  return "'" + ($Value -replace "'", "''") + "'"
+}
+
+function Test-ProjectProcess {
+  param([Parameter(Mandatory = $true)]$Process)
+
+  $rootPattern = "*" + $projectRoot + "*"
+
+  if ($Process.CommandLine -like $rootPattern) {
+    return $true
+  }
+
+  if ($Process.ExecutablePath -like $rootPattern) {
+    return $true
+  }
+
+  $parentId = $Process.ParentProcessId
+  for ($i = 0; $i -lt 6 -and $parentId; $i++) {
+    $parent = Get-CimInstance Win32_Process -Filter "ProcessId = $parentId" -ErrorAction SilentlyContinue
+
+    if ($null -eq $parent) {
+      return $false
+    }
+
+    if ($parent.CommandLine -like $rootPattern -or $parent.ExecutablePath -like $rootPattern) {
+      return $true
+    }
+
+    $parentId = $parent.ParentProcessId
+  }
+
+  return $false
+}
+
+function Stop-ProjectProcesses {
+  Write-Host "Stopping old project dev servers..."
+
+  Get-CimInstance Win32_Process |
+    Where-Object { Test-ProjectProcess $_ } |
+    Where-Object {
+      $_.CommandLine -like "*uvicorn app.main:app*" -or
+      $_.CommandLine -like "*tsx watch src/index.ts*" -or
+      $_.CommandLine -like "*next dev*" -or
+      $_.CommandLine -like "*pnpm.cmd dev*" -or
+      $_.CommandLine -like "*pnpm dev*"
+    } |
+    ForEach-Object {
+      Write-Host "Stopping PID $($_.ProcessId)"
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Warn-OccupiedProjectPort {
+  param([int]$Port)
+
+  $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+
+  foreach ($connection in $connections) {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
+
+    if ($null -eq $process) {
+      continue
+    }
+
+    if (Test-ProjectProcess $process) {
+      Write-Host "Stopping project process on port $Port (PID $($process.ProcessId))"
+      Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    } else {
+      Write-Host "Port $Port is already in use by PID $($process.ProcessId); leaving unrelated process running."
+    }
+  }
+}
 
 function Wait-Docker {
   $dockerDesktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
@@ -27,59 +103,63 @@ function Wait-Docker {
   exit 1
 }
 
-function Stop-Port {
-  param([int]$Port)
+function Start-DevShell {
+  param(
+    [Parameter(Mandatory = $true)][string]$Title,
+    [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+    [Parameter(Mandatory = $true)][string]$Command
+  )
 
-  $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  $quotedDirectory = ConvertTo-PowerShellLiteral $WorkingDirectory
+  $shellCommand = "Set-Location -LiteralPath $quotedDirectory; $Command"
 
-  foreach ($connection in $connections) {
-    $processId = $connection.OwningProcess
-
-    if ($processId -ne 0) {
-      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-    }
-  }
+  Write-Host "Starting $Title..."
+  Start-Process powershell -ArgumentList @(
+    "-NoExit",
+    "-ExecutionPolicy", "Bypass",
+    "-Command",
+    $shellCommand
+  )
 }
 
 Wait-Docker
-
-Write-Host "Stopping old dev servers..."
-Stop-Port 3000
-Stop-Port 3001
-Stop-Port 4000
-Stop-Port 5000
+Stop-ProjectProcesses
+Warn-OccupiedProjectPort 3000
+Warn-OccupiedProjectPort 3001
+Warn-OccupiedProjectPort 4000
+Warn-OccupiedProjectPort 5000
 
 Write-Host "Starting PostgreSQL..."
-Set-Location $projectRoot
+Set-Location -LiteralPath $projectRoot
 docker compose up -d postgres
 
-Write-Host "Starting translate-service..."
-Start-Process powershell -ArgumentList @(
-  "-NoExit",
-  "-ExecutionPolicy", "Bypass",
-  "-Command",
-  'cd "D:\trans-chat\translate-service"; .\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5000'
-)
+$translateDir = Join-Path $projectRoot "translate-service"
+$chatServerDir = Join-Path $projectRoot "chat-server"
+$frontendDir = Join-Path $projectRoot "frontend"
+$pythonExe = Join-Path $translateDir "venv\Scripts\python.exe"
+
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+  $pythonExe = "python"
+}
+
+Start-DevShell `
+  -Title "translate-service" `
+  -WorkingDirectory $translateDir `
+  -Command ("& " + (ConvertTo-PowerShellLiteral $pythonExe) + " -m uvicorn app.main:app --reload --port 5000")
 
 Start-Sleep -Seconds 5
 
-Write-Host "Starting chat-server..."
-Start-Process powershell -ArgumentList @(
-  "-NoExit",
-  "-ExecutionPolicy", "Bypass",
-  "-Command",
-  'cd "D:\trans-chat\chat-server"; pnpm.cmd dev'
-)
+Start-DevShell `
+  -Title "chat-server" `
+  -WorkingDirectory $chatServerDir `
+  -Command "pnpm.cmd dev"
 
 Start-Sleep -Seconds 5
 
-Write-Host "Starting frontend..."
-Start-Process powershell -ArgumentList @(
-  "-NoExit",
-  "-ExecutionPolicy", "Bypass",
-  "-Command",
-  'cd "D:\trans-chat\frontend"; pnpm.cmd dev'
-)
+Start-DevShell `
+  -Title "frontend" `
+  -WorkingDirectory $frontendDir `
+  -Command "pnpm.cmd dev"
 
 Start-Sleep -Seconds 8
 

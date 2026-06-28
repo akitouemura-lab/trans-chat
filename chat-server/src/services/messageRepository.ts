@@ -25,15 +25,17 @@ export async function saveMessage(input: CreateMessageInput) {
 }
 
 export async function getRoomMessages(roomId: string) {
-  return prisma.message.findMany({
+  const messages = await prisma.message.findMany({
     where: {
       roomId
     },
     orderBy: {
-      createdAt: "asc"
+      createdAt: "desc"
     },
     take: 100
   });
+
+  return messages.reverse();
 }
 
 export async function deleteRoomMessages(roomId: string) {

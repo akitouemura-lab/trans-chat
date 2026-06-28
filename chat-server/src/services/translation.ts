@@ -29,6 +29,7 @@ type CachedTranslation = {
 };
 
 const MAX_CACHE_SIZE = 300;
+const DEFAULT_TRANSLATE_TIMEOUT_MS = 5000;
 const translationCache = new Map<string, CachedTranslation>();
 
 export function detectTargetLang(text: string): TargetLang {
@@ -55,6 +56,47 @@ function saveToCache(key: string, value: CachedTranslation): void {
   translationCache.set(key, value);
 }
 
+function createFallbackResult(
+  sourceLang: SourceLang,
+  targetLang: TargetLang
+): TranslationResult {
+  return {
+    translatedText: null,
+    sourceLang,
+    targetLang,
+    translationMs: null,
+    cacheHit: false
+  };
+}
+
+function getTranslateTimeoutMs(): number {
+  const configured = Number(process.env.TRANSLATE_TIMEOUT_MS);
+
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+
+  return DEFAULT_TRANSLATE_TIMEOUT_MS;
+}
+
+function isTargetLang(value: unknown): value is TargetLang {
+  return value === "ja" || value === "en";
+}
+
+function isTranslateResponse(value: unknown): value is TranslateResponse {
+  if (typeof value !== "object" || value === null) return false;
+
+  const data = value as Record<string, unknown>;
+
+  return (
+    typeof data.translated_text === "string" &&
+    typeof data.source_lang === "string" &&
+    isTargetLang(data.target_lang) &&
+    typeof data.translation_ms === "number" &&
+    Number.isFinite(data.translation_ms)
+  );
+}
+
 export function getTranslationCacheSize(): number {
   return translationCache.size;
 }
@@ -75,13 +117,7 @@ export async function translateMessage(
   const sourceLang = options.sourceLang ?? "auto";
 
   if (originalText.length === 0) {
-    return {
-      translatedText: null,
-      sourceLang,
-      targetLang,
-      translationMs: null,
-      cacheHit: false
-    };
+    return createFallbackResult(sourceLang, targetLang);
   }
 
   if (sourceLang !== "auto" && sourceLang === targetLang) {
@@ -105,12 +141,18 @@ export async function translateMessage(
     };
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, getTranslateTimeoutMs());
+
   try {
     const response = await fetch(translateServiceUrl + "/translate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
+      signal: controller.signal,
       body: JSON.stringify({
         text: originalText,
         source_lang: sourceLang,
@@ -121,16 +163,15 @@ export async function translateMessage(
     if (!response.ok) {
       console.error("translate-service error:", response.status);
 
-      return {
-        translatedText: null,
-        sourceLang,
-        targetLang,
-        translationMs: null,
-        cacheHit: false
-      };
+      return createFallbackResult(sourceLang, targetLang);
     }
 
-    const data = (await response.json()) as TranslateResponse;
+    const data: unknown = await response.json();
+
+    if (!isTranslateResponse(data)) {
+      console.error("translate-service returned an invalid response");
+      return createFallbackResult(sourceLang, targetLang);
+    }
 
     const result: CachedTranslation = {
       translatedText: data.translated_text,
@@ -148,14 +189,14 @@ export async function translateMessage(
       cacheHit: false
     };
   } catch (error) {
-    console.error("translation request failed:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      console.error("translation request timed out");
+    } else {
+      console.error("translation request failed");
+    }
 
-    return {
-      translatedText: null,
-      sourceLang,
-      targetLang,
-      translationMs: null,
-      cacheHit: false
-    };
+    return createFallbackResult(sourceLang, targetLang);
+  } finally {
+    clearTimeout(timeout);
   }
 }

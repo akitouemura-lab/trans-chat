@@ -32,6 +32,7 @@ type ChatMessage = {
   targetLang: string | null;
   translationMs: number | null;
   cacheHit?: boolean;
+  clientMessageId?: string;
   createdAt: string;
 };
 
@@ -164,18 +165,21 @@ function validateMessagePayload(payload: unknown): ValidationResult {
   };
 }
 
-function toChatMessage(message: {
-  id: string;
-  roomId: string;
-  userName: string;
-  originalText: string;
-  translatedText: string | null;
-  sourceLang: string | null;
-  targetLang: string | null;
-  translationMs: number | null;
-  createdAt: Date;
-}): ChatMessage {
-  return {
+function toChatMessage(
+  message: {
+    id: string;
+    roomId: string;
+    userName: string;
+    originalText: string;
+    translatedText: string | null;
+    sourceLang: string | null;
+    targetLang: string | null;
+    translationMs: number | null;
+    createdAt: Date;
+  },
+  clientMessageId?: string
+): ChatMessage {
+  const chatMessage: ChatMessage = {
     id: message.id,
     roomId: message.roomId,
     userName: message.userName,
@@ -186,6 +190,12 @@ function toChatMessage(message: {
     translationMs: message.translationMs,
     createdAt: message.createdAt.toISOString()
   };
+
+  if (clientMessageId) {
+    chatMessage.clientMessageId = clientMessageId;
+  }
+
+  return chatMessage;
 }
 
 function emitMessageStatus(
@@ -216,13 +226,24 @@ export function registerSocketHandlers(io: Server) {
         return;
       }
 
+      const previousRoomId =
+        typeof socket.data.roomId === "string" ? socket.data.roomId : null;
+
+      if (previousRoomId && previousRoomId !== roomId) {
+        socket.leave(previousRoomId);
+      }
+
+      socket.data.roomId = roomId;
       socket.join(roomId);
       socket.emit("joined_room", roomId);
       console.log(socket.id + " joined room: " + roomId);
 
       try {
         const messages = await getRoomMessages(roomId);
-        socket.emit("room_history", messages.map(toChatMessage));
+        socket.emit(
+          "room_history",
+          messages.map((message) => toChatMessage(message))
+        );
       } catch (error) {
         console.error("failed to load room history:", error);
         socket.emit("error_message", "Failed to load room history.");
@@ -265,7 +286,7 @@ export function registerSocketHandlers(io: Server) {
         });
 
         const message: ChatMessage = {
-          ...toChatMessage(savedMessage),
+          ...toChatMessage(savedMessage, clientMessageId),
           cacheHit: translation.cacheHit
         };
 
@@ -284,11 +305,17 @@ export function registerSocketHandlers(io: Server) {
           targetLang: translation.targetLang,
           translationMs: translation.translationMs,
           cacheHit: translation.cacheHit,
+          clientMessageId,
           createdAt: new Date().toISOString()
         };
 
         io.to(roomId).emit("receive_message", fallbackMessage);
-        emitMessageStatus(socket, clientMessageId, "error", "Message was sent but could not be saved.");
+        emitMessageStatus(
+          socket,
+          clientMessageId,
+          "error",
+          "Message was sent but could not be saved."
+        );
       }
     });
 
