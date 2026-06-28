@@ -8,6 +8,48 @@ function ConvertTo-PowerShellLiteral {
   return "'" + ($Value -replace "'", "''") + "'"
 }
 
+function Get-LanHost {
+  if ($env:LAN_HOST) {
+    return $env:LAN_HOST
+  }
+
+  $privateAddress = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.IPAddress -notlike "127.*" -and
+      $_.IPAddress -notlike "169.254.*" -and
+      (
+        $_.IPAddress -like "10.*" -or
+        $_.IPAddress -like "192.168.*" -or
+        $_.IPAddress -match "^172\.(1[6-9]|2[0-9]|3[0-1])\."
+      ) -and
+      $_.InterfaceAlias -notlike "*Loopback*" -and
+      $_.InterfaceAlias -notlike "*vEthernet*" -and
+      $_.InterfaceAlias -notlike "*Docker*" -and
+      $_.InterfaceAlias -notlike "*WSL*"
+    } |
+    Sort-Object InterfaceMetric |
+    Select-Object -First 1
+
+  if ($privateAddress) {
+    return $privateAddress.IPAddress
+  }
+
+  return "localhost"
+}
+
+function New-EnvCommand {
+  param(
+    [Parameter(Mandatory = $true)][hashtable]$Environment,
+    [Parameter(Mandatory = $true)][string]$Command
+  )
+
+  $assignments = foreach ($key in $Environment.Keys) {
+    '$env:' + $key + '=' + (ConvertTo-PowerShellLiteral ([string]$Environment[$key]))
+  }
+
+  return (($assignments + $Command) -join "; ")
+}
+
 function Test-ProjectProcess {
   param([Parameter(Mandatory = $true)]$Process)
 
@@ -137,10 +179,31 @@ $translateDir = Join-Path $projectRoot "translate-service"
 $chatServerDir = Join-Path $projectRoot "chat-server"
 $frontendDir = Join-Path $projectRoot "frontend"
 $pythonExe = Join-Path $translateDir "venv\Scripts\python.exe"
+$lanHost = Get-LanHost
+$chatServerUrl = if ($env:NEXT_PUBLIC_CHAT_SERVER_URL) {
+  $env:NEXT_PUBLIC_CHAT_SERVER_URL
+} elseif ($lanHost -ne "localhost") {
+  "http://" + $lanHost + ":4000"
+} else {
+  "http://localhost:4000"
+}
+$clientOrigin = if ($env:CLIENT_ORIGIN) {
+  $env:CLIENT_ORIGIN
+} elseif ($lanHost -ne "localhost") {
+  "http://localhost:3000,http://127.0.0.1:3000,http://" + $lanHost + ":3000"
+} else {
+  "http://localhost:3000,http://127.0.0.1:3000"
+}
 
 if (-not (Test-Path -LiteralPath $pythonExe)) {
   $pythonExe = "python"
 }
+
+Write-Host "Frontend URL on this PC: http://localhost:3000"
+if ($lanHost -ne "localhost") {
+  Write-Host "Frontend URL on the same LAN: http://$lanHost`:3000"
+}
+Write-Host "Chat server URL used by frontend: $chatServerUrl"
 
 Start-DevShell `
   -Title "translate-service" `
@@ -152,17 +215,25 @@ Start-Sleep -Seconds 5
 Start-DevShell `
   -Title "chat-server" `
   -WorkingDirectory $chatServerDir `
-  -Command "pnpm.cmd dev"
+  -Command (New-EnvCommand @{
+    LAN_HOST = $lanHost
+    CLIENT_ORIGIN = $clientOrigin
+  } "pnpm.cmd dev")
 
 Start-Sleep -Seconds 5
 
 Start-DevShell `
   -Title "frontend" `
   -WorkingDirectory $frontendDir `
-  -Command "pnpm.cmd dev"
+  -Command (New-EnvCommand @{
+    NEXT_PUBLIC_CHAT_SERVER_URL = $chatServerUrl
+  } "pnpm.cmd dev --hostname 0.0.0.0")
 
 Start-Sleep -Seconds 8
 
 Start-Process "http://localhost:3000"
 
 Write-Host "Done. Open http://localhost:3000"
+if ($lanHost -ne "localhost") {
+  Write-Host "From another device on the same LAN, open http://$lanHost`:3000"
+}

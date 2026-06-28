@@ -25,13 +25,36 @@ dotenv.config();
 
 const app = express();
 
-const clientOrigin = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
+function parseClientOrigins(value: string | undefined): string[] {
+  if (!value) return [];
+
+  return value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+const lanHost = process.env.LAN_HOST?.trim();
+const clientOrigins = parseClientOrigins(process.env.CLIENT_ORIGIN);
+
+if (clientOrigins.length === 0) {
+  clientOrigins.push("http://localhost:3000", "http://127.0.0.1:3000");
+}
+
+if (lanHost) {
+  const lanOrigin = "http://" + lanHost + ":3000";
+
+  if (!clientOrigins.includes(lanOrigin)) {
+    clientOrigins.push(lanOrigin);
+  }
+}
+
 const port = Number(process.env.PORT ?? 4000);
 const adminActionsEnabled = process.env.ENABLE_ADMIN_ACTIONS === "true";
 
 app.use(
   cors({
-    origin: clientOrigin,
+    origin: clientOrigins,
     credentials: true,
     methods: ["GET", "POST", "DELETE", "OPTIONS"]
   })
@@ -117,13 +140,13 @@ const httpServer = http.createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: clientOrigin,
+    origin: clientOrigins,
     methods: ["GET", "POST"]
   }
 });
 
 registerSocketHandlers(io);
 
-httpServer.listen(port, () => {
-  console.log("chat-server is running on http://localhost:" + port);
+httpServer.listen(port, "0.0.0.0", () => {
+  console.log("chat-server is running on http://0.0.0.0:" + port);
 });

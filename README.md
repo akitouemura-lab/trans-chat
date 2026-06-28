@@ -204,6 +204,7 @@ trans-chat/
 |   `-- workflows/
 |       `-- ci.yml
 |-- docker-compose.yml
+|-- .env.example
 |-- start-dev.ps1
 |-- stop-dev.ps1
 `-- README.md
@@ -226,9 +227,12 @@ Use the example environment files as local templates:
 ```powershell
 Copy-Item .\chat-server\.env.example .\chat-server\.env
 Copy-Item .\frontend\.env.example .\frontend\.env.local
+
+# Optional: Docker Compose LAN access settings
+Copy-Item .\.env.example .\.env
 ```
 
-Do not commit real `.env` files. The example files are safe templates for local development.
+Do not commit real `.env` files. The example files are safe templates for local development. If you copy the root `.env.example`, replace the sample LAN IP address before using Docker Compose from another device.
 
 ### Docker Compose Startup
 
@@ -240,10 +244,12 @@ docker compose up --build
 
 This starts:
 
-- PostgreSQL on `localhost:5432`
-- FastAPI translation service on `http://localhost:5000`
+- PostgreSQL on `localhost:5432` on the development PC
+- FastAPI translation service on `http://localhost:5000` on the development PC
 - Node.js chat server on `http://localhost:4000`
 - Next.js frontend on `http://localhost:3000`
+
+For same-machine development, the default Compose settings are enough. For LAN access, set `LAN_HOST` in the root `.env` file before building so the browser bundle points to the development PC instead of `localhost`.
 
 Stop the stack:
 
@@ -291,13 +297,107 @@ powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
 
 The helper scripts derive the project root from the script location, so they do not depend on a hard-coded checkout path.
 
+## Access from Another Device on the Same LAN
+
+`localhost` always points to the device that is opening the page. If you open `http://localhost:3000` on a phone, the phone looks for a server running on the phone itself, not on the development PC.
+
+To test TransChat from another PC or smartphone on the same trusted Wi-Fi/LAN, use the development PC's LAN IPv4 address.
+
+1. Find the development PC's IPv4 address:
+
+```powershell
+ipconfig
+```
+
+Look for `IPv4 Address` on the active Wi-Fi or Ethernet adapter. Example:
+
+```text
+192.168.1.20
+```
+
+2. Open the frontend from another device:
+
+```text
+http://192.168.1.20:3000
+```
+
+3. Make sure the frontend connects to the chat server using the same LAN host:
+
+```text
+http://192.168.1.20:4000
+```
+
+### Docker Compose LAN Startup
+
+Create a root `.env` file from the example and set `LAN_HOST`:
+
+```powershell
+Copy-Item .\.env.example .\.env
+notepad .\.env
+```
+
+Example:
+
+```env
+LAN_HOST=192.168.1.20
+```
+
+Then rebuild and start the stack:
+
+```powershell
+docker compose up --build
+```
+
+`NEXT_PUBLIC_CHAT_SERVER_URL` is read at Next.js build time, so rebuild the frontend container after changing `LAN_HOST`, `NEXT_PUBLIC_CHAT_SERVER_URL`, or `CLIENT_ORIGIN`.
+
+### Local Development LAN Startup
+
+The Windows helper script binds the frontend to `0.0.0.0`, detects a private LAN IPv4 address when possible, and passes the matching chat server URL to Next.js:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
+
+You can override automatic detection explicitly:
+
+```powershell
+$env:LAN_HOST = "192.168.1.20"
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
+
+The chat server allows CORS from `localhost`, `127.0.0.1`, and `http://<LAN_HOST>:3000`. You can also provide a comma-separated `CLIENT_ORIGIN` value when you need exact control.
+
+### Firewall Notes
+
+- Allow inbound TCP `3000` and `4000` on the development PC if Windows Defender Firewall prompts you.
+- Ports `5000` and `5432` are bound to `127.0.0.1` in Docker Compose because browsers on other devices do not need direct access to the translation service or database.
+- Use this only on a trusted local network. Do not expose this development setup directly to the internet.
+
 ## Environment Variables
+
+### Root `.env.example`
+
+The root `.env.example` is optional and is mainly for Docker Compose LAN access:
+
+```env
+LAN_HOST=192.168.1.20
+# NEXT_PUBLIC_CHAT_SERVER_URL=http://192.168.1.20:4000
+# CLIENT_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.20:3000
+```
+
+| Variable | Purpose |
+| --- | --- |
+| `LAN_HOST` | Development PC IPv4 address used to derive LAN-friendly defaults |
+| `NEXT_PUBLIC_CHAT_SERVER_URL` | Optional direct override for the frontend's browser-facing chat server URL |
+| `CLIENT_ORIGIN` | Optional comma-separated list of frontend origins allowed by chat-server CORS |
 
 ### `chat-server/.env.example`
 
 ```env
 PORT=4000
 CLIENT_ORIGIN=http://localhost:3000
+# LAN_HOST=192.168.1.20
+# CLIENT_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.20:3000
 TRANSLATE_SERVICE_URL=http://localhost:5000
 TRANSLATE_TIMEOUT_MS=5000
 DATABASE_URL=postgresql://transchat:transchat_password@localhost:5432/transchat?schema=public
@@ -307,7 +407,8 @@ ENABLE_ADMIN_ACTIONS=false
 | Variable | Purpose |
 | --- | --- |
 | `PORT` | HTTP and Socket.IO server port |
-| `CLIENT_ORIGIN` | Allowed frontend origin for CORS |
+| `CLIENT_ORIGIN` | Allowed frontend origins for CORS. Multiple origins can be comma-separated. |
+| `LAN_HOST` | Optional LAN IPv4 address. When present, `http://<LAN_HOST>:3000` is added to allowed origins. |
 | `TRANSLATE_SERVICE_URL` | FastAPI translation service URL |
 | `TRANSLATE_TIMEOUT_MS` | Timeout for translation HTTP requests |
 | `DATABASE_URL` | PostgreSQL connection string for Prisma |
@@ -319,9 +420,12 @@ ENABLE_ADMIN_ACTIONS=false
 
 ```env
 NEXT_PUBLIC_CHAT_SERVER_URL=http://localhost:4000
+
+# LAN access example:
+# NEXT_PUBLIC_CHAT_SERVER_URL=http://192.168.1.20:4000
 ```
 
-This value tells the browser where the Socket.IO chat server is running.
+This value tells the browser where the Socket.IO chat server is running. When testing from another device, it must use the development PC's LAN IP address instead of `localhost`.
 
 ## Usage
 
@@ -386,7 +490,7 @@ Example response:
       "roomId": "room1",
       "userName": "user1",
       "originalText": "Hello, how are you?",
-      "translatedText": "こんにちは、お元気ですか？",
+      "translatedText": "Japanese translation text",
       "sourceLang": "en",
       "targetLang": "ja",
       "translationMs": 120,
@@ -463,7 +567,7 @@ Server to clients in the room:
   "roomId": "room1",
   "userName": "user1",
   "originalText": "I want to build a web application.",
-  "translatedText": "Webアプリケーションを作りたいです。",
+  "translatedText": "Japanese translation text",
   "sourceLang": "en",
   "targetLang": "ja",
   "translationMs": 95,

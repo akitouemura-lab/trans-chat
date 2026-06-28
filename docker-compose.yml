@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: transchat_password
       POSTGRES_DB: transchat
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +21,7 @@ services:
       context: ./translate-service
     container_name: trans-chat-translate-service
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
 
   chat-server:
     build:
@@ -29,7 +29,8 @@ services:
     container_name: trans-chat-chat-server
     environment:
       PORT: 4000
-      CLIENT_ORIGIN: http://localhost:3000
+      LAN_HOST: ${LAN_HOST:-}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
       TRANSLATE_SERVICE_URL: http://translate-service:5000
       TRANSLATE_TIMEOUT_MS: 5000
       DATABASE_URL: postgresql://transchat:transchat_password@postgres:5432/transchat?schema=public
@@ -46,10 +47,10 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_CHAT_SERVER_URL: http://localhost:4000
+        NEXT_PUBLIC_CHAT_SERVER_URL: ${NEXT_PUBLIC_CHAT_SERVER_URL:-http://${LAN_HOST:-localhost}:4000}
     container_name: trans-chat-frontend
     environment:
-      NEXT_PUBLIC_CHAT_SERVER_URL: http://localhost:4000
+      NEXT_PUBLIC_CHAT_SERVER_URL: ${NEXT_PUBLIC_CHAT_SERVER_URL:-http://${LAN_HOST:-localhost}:4000}
     ports:
       - "3000:3000"
     depends_on:
