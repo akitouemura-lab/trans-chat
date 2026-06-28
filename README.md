@@ -1,42 +1,115 @@
 # TransChat
 
-TransChat is a real-time English/Japanese translation chat app. It combines a Next.js frontend, a Node.js/Express/Socket.IO chat server, a FastAPI translation service, PostgreSQL, Prisma, and Docker Compose.
+TransChat is a real-time English/Japanese translation chat application built to make bilingual conversation feel immediate, natural, and technically elegant.
 
-The goal is to make cross-language chat feel immediate while keeping the architecture understandable for portfolio review and local development.
+It combines a Next.js frontend, a Node.js/Express/Socket.IO chat server, a FastAPI translation service, Argos Translate, PostgreSQL, Prisma, Docker Compose, and GitHub Actions CI into one small but complete full-stack system.
+
+## Project Overview
+
+TransChat is a portfolio-focused full-stack project that demonstrates realtime communication, local translation model integration, persistent chat history, service boundaries, Docker-based local infrastructure, and production-minded reliability improvements.
+
+The application lets users create or join chat rooms, send messages, translate between English and Japanese, view original and translated text together, and reload recent room history from PostgreSQL. It is designed to be understandable as a practical architecture sample rather than a toy single-file demo.
+
+## Demo Video
+
+[Watch the demo video](docs/videos/demo.mp4)
+
+## Overview
+
+Modern online communication often crosses language boundaries, but many translation workflows still require users to leave a conversation, open another tool, copy text, translate it, and paste the result back into chat.
+
+TransChat removes that friction by embedding translation directly into the chat flow. When a user sends a message, the chat server validates the payload, requests a local translation, stores the result, and broadcasts the message to users in the same room.
+
+This project was built to solve a concrete communication problem while also showcasing engineering skills that matter in real applications:
+
+- realtime bidirectional communication
+- frontend state and component design
+- backend validation and safe failure handling
+- local AI/translation integration without paid APIs
+- database persistence and ORM usage
+- containerized service orchestration
+- CI-based project verification
+
+## Core Concept
+
+> Make cross-language communication feel immediate, natural, and technically elegant.
+
+TransChat focuses on keeping the user experience simple while making the internal architecture explicit. The frontend is responsible for interaction and optimistic UI, the chat server owns realtime coordination and persistence, the translation service owns language translation, and PostgreSQL stores durable message history.
 
 ## Features
 
-- Room-based real-time chat with Socket.IO
-- English to Japanese and Japanese to English translation
-- Auto language direction selection plus manual direction selection
-- Local translation through Argos Translate, with no paid translation API required
-- PostgreSQL message persistence through Prisma
-- Latest 100 room messages loaded in chronological display order
-- Optimistic pending messages matched by `clientMessageId`
-- Dark and light mode with local browser persistence
-- Docker Compose support for PostgreSQL, translation service, chat server, and frontend
+### Real-time Chat
+
+- Room-based realtime messaging with Socket.IO
+- Room creation and room joining from the UI
+- Connection status display
+- Separate rendering for your messages and messages from other users
+- Safe room switching so a socket leaves the previous room before joining the next one
+
+### English/Japanese Translation
+
+- English to Japanese translation
+- Japanese to English translation
+- Auto translation direction based on simple language detection
+- Manual translation direction selection
+- Local translation with Argos Translate
+- Translation latency shown per message when available
+- In-memory translation cache in the chat server to avoid repeated translation work for the same normalized text and language direction
+
+### Persistent Message History
+
+- PostgreSQL storage through Prisma
+- Original text and translated text stored together
+- Source language, target language, translation latency, room ID, user name, and timestamp metadata
+- Latest 100 messages loaded for each room
+- History is returned in chronological display order
+
+### Optimistic UI
+
+- Pending message state while a message is being sent and translated
+- `message_status` events for `translating`, `saved`, and `error` states
+- `clientMessageId` support so pending messages are replaced by the matching server broadcast instead of guessing by text content
+- More stable behavior when the same user sends the same message multiple times
+
+### UI and Local Persistence
+
+- Dark/light mode
+- Local browser persistence for user name, room ID, theme, and translation direction
+- Message input validation
+- Responsive chat layout
+
+### Operations and Safety
+
+- Docker Compose for the full stack
 - GitHub Actions CI for frontend, chat server, and translation service checks
+- Translation request timeout with safe fallback
+- Generic FastAPI error responses that do not expose raw internal exceptions
+- Destructive room-history deletion disabled by default unless admin actions are explicitly enabled
 
 ## Tech Stack
 
 | Area | Technology |
 | --- | --- |
 | Frontend | Next.js, React, TypeScript, Tailwind CSS |
-| Realtime server | Node.js, Express, Socket.IO, TypeScript |
-| Translation service | Python, FastAPI, Argos Translate |
-| Database | PostgreSQL, Prisma |
+| Realtime client | Socket.IO Client |
+| Chat server | Node.js, Express, Socket.IO, TypeScript |
+| Translation service | Python, FastAPI, Uvicorn |
+| Translation engine | Argos Translate |
+| Database | PostgreSQL |
+| ORM | Prisma |
 | Package manager | pnpm |
 | Local infrastructure | Docker Compose |
+| CI | GitHub Actions |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Browser[Browser / Next.js UI]
-    ChatServer[Node.js Chat Server]
-    TranslateService[FastAPI Translation Service]
-    TranslationEngine[Argos Translate]
-    Database[(PostgreSQL)]
+    Browser["Browser / Next.js UI"]
+    ChatServer["Node.js Chat Server<br/>Express + Socket.IO + Prisma"]
+    TranslateService["FastAPI Translation Service"]
+    TranslationEngine["Argos Translate"]
+    Database[("PostgreSQL")]
 
     Browser <--> ChatServer
     ChatServer --> TranslateService
@@ -45,38 +118,100 @@ flowchart LR
     Database --> ChatServer
 ```
 
-## Architecture Notes
+### Service Responsibilities
 
-- The frontend is split into chat components, localStorage-backed settings, Socket.IO state, validation helpers, and shared message types under `frontend/features/chat`.
-- The chat server owns Socket.IO room membership, message validation, persistence, optimistic-message IDs, translation-service calls, and the HTTP room-history API.
-- The translation service owns language schema validation, Argos Translate integration, and generic error responses that do not expose raw internal exceptions.
-- PostgreSQL stores original text, translated text, language metadata, translation latency, room ID, user name, and timestamps.
+| Layer | Responsibility |
+| --- | --- |
+| `frontend/` | Renders the chat UI, manages local settings, handles optimistic messages, and talks to Socket.IO |
+| `chat-server/` | Validates messages, manages rooms, calls translation service, persists messages, and broadcasts events |
+| `translate-service/` | Validates translation requests and translates English/Japanese text with Argos Translate |
+| PostgreSQL | Stores message history and metadata |
+| Docker Compose | Runs the full local service graph |
+
+## Message Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend as Next.js Frontend
+    participant Socket as Socket.IO Chat Server
+    participant Translate as FastAPI Translation Service
+    participant DB as PostgreSQL
+
+    User->>Frontend: Type and send message
+    Frontend->>Frontend: Create pending message with clientMessageId
+    Frontend->>Socket: send_message
+    Socket->>Socket: Validate room, user, text, languages
+    Socket-->>Frontend: message_status translating
+    Socket->>Translate: POST /translate
+    Translate->>Translate: Validate schema and translate text
+    Translate-->>Socket: translated text and metadata
+    Socket->>DB: Save message with Prisma
+    DB-->>Socket: Stored message
+    Socket-->>Frontend: receive_message with clientMessageId
+    Frontend->>Frontend: Replace matching pending message
+```
+
+If translation times out, the translation service is unreachable, the response is invalid, or the service returns a non-OK response, the chat server returns a safe fallback shape instead of crashing the socket handler.
 
 ## Project Structure
 
 ```text
 trans-chat/
-├── frontend/
-│   ├── app/
-│   ├── features/chat/
-│   ├── Dockerfile
-│   └── .env.example
-├── chat-server/
-│   ├── src/
-│   ├── prisma/
-│   ├── Dockerfile
-│   └── .env.example
-├── translate-service/
-│   ├── app/
-│   ├── Dockerfile
-│   └── requirements.txt
-├── .github/workflows/ci.yml
-├── docker-compose.yml
-├── start-dev.ps1
-└── stop-dev.ps1
+|-- frontend/
+|   |-- app/
+|   |   |-- layout.tsx
+|   |   `-- page.tsx
+|   |-- features/
+|   |   `-- chat/
+|   |       |-- components/
+|   |       |   |-- ChatHeader.tsx
+|   |       |   |-- RoomControls.tsx
+|   |       |   |-- MessageList.tsx
+|   |       |   |-- MessageBubble.tsx
+|   |       |   `-- MessageInput.tsx
+|   |       |-- hooks/
+|   |       |   |-- useChatSocket.ts
+|   |       |   `-- useLocalChatSettings.ts
+|   |       `-- lib/
+|   |           |-- types.ts
+|   |           `-- validation.ts
+|   |-- Dockerfile
+|   `-- .env.example
+|
+|-- chat-server/
+|   |-- src/
+|   |   |-- index.ts
+|   |   |-- socket.ts
+|   |   `-- services/
+|   |       |-- db.ts
+|   |       |-- messageRepository.ts
+|   |       `-- translation.ts
+|   |-- prisma/
+|   |   `-- schema.prisma
+|   |-- Dockerfile
+|   `-- .env.example
+|
+|-- translate-service/
+|   |-- app/
+|   |   |-- main.py
+|   |   |-- schemas.py
+|   |   `-- translator.py
+|   |-- Dockerfile
+|   `-- requirements.txt
+|
+|-- .github/
+|   `-- workflows/
+|       `-- ci.yml
+|-- docker-compose.yml
+|-- start-dev.ps1
+|-- stop-dev.ps1
+`-- README.md
 ```
 
-## Requirements
+## Setup
+
+### Requirements
 
 - Node.js
 - pnpm
@@ -84,37 +219,43 @@ trans-chat/
 - Docker Desktop
 - Git
 
-## Environment Files
+### Environment Files
 
-Copy the example files before local development:
+Use the example environment files as local templates:
 
 ```powershell
 Copy-Item .\chat-server\.env.example .\chat-server\.env
 Copy-Item .\frontend\.env.example .\frontend\.env.local
 ```
 
-`chat-server/.env.example` includes:
+Do not commit real `.env` files. The example files are safe templates for local development.
 
-```env
-PORT=4000
-CLIENT_ORIGIN=http://localhost:3000
-TRANSLATE_SERVICE_URL=http://localhost:5000
-TRANSLATE_TIMEOUT_MS=5000
-DATABASE_URL=postgresql://transchat:transchat_password@localhost:5432/transchat?schema=public
-ENABLE_ADMIN_ACTIONS=false
+### Docker Compose Startup
+
+The easiest way to run the full stack is Docker Compose:
+
+```powershell
+docker compose up --build
 ```
 
-`ENABLE_ADMIN_ACTIONS=false` disables destructive room-history deletion by default. Set it to `true` only in a trusted local/admin environment where the delete-history endpoint should be available.
+This starts:
 
-`frontend/.env.example` includes:
+- PostgreSQL on `localhost:5432`
+- FastAPI translation service on `http://localhost:5000`
+- Node.js chat server on `http://localhost:4000`
+- Next.js frontend on `http://localhost:3000`
 
-```env
-NEXT_PUBLIC_CHAT_SERVER_URL=http://localhost:4000
+Stop the stack:
+
+```powershell
+docker compose down
 ```
 
-## Quick Start
+The translation service may take longer on first startup because Argos Translate checks and installs language packages when needed.
 
-Install dependencies and prepare the database:
+### Local Development Startup
+
+Prepare dependencies and database locally:
 
 ```powershell
 docker compose up -d postgres
@@ -136,86 +277,128 @@ pnpm.cmd install
 cd ..
 ```
 
-Start all local dev services on Windows:
+Start all local development services on Windows:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
 ```
 
-Stop local dev services:
+Stop local development services:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
 ```
 
-Open:
+The helper scripts derive the project root from the script location, so they do not depend on a hard-coded checkout path.
 
-```text
-http://localhost:3000
+## Environment Variables
+
+### `chat-server/.env.example`
+
+```env
+PORT=4000
+CLIENT_ORIGIN=http://localhost:3000
+TRANSLATE_SERVICE_URL=http://localhost:5000
+TRANSLATE_TIMEOUT_MS=5000
+DATABASE_URL=postgresql://transchat:transchat_password@localhost:5432/transchat?schema=public
+ENABLE_ADMIN_ACTIONS=false
 ```
 
-## Docker Compose
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | HTTP and Socket.IO server port |
+| `CLIENT_ORIGIN` | Allowed frontend origin for CORS |
+| `TRANSLATE_SERVICE_URL` | FastAPI translation service URL |
+| `TRANSLATE_TIMEOUT_MS` | Timeout for translation HTTP requests |
+| `DATABASE_URL` | PostgreSQL connection string for Prisma |
+| `ENABLE_ADMIN_ACTIONS` | Enables destructive admin-only endpoints when set to `true` |
 
-Build and run the full stack:
+`ENABLE_ADMIN_ACTIONS=false` is the safe default. With this setting, `DELETE /rooms/:roomId/messages` returns HTTP 403 and does not delete history. Set it to `true` only in a trusted local/admin environment.
 
-```powershell
-docker compose up --build
+### `frontend/.env.example`
+
+```env
+NEXT_PUBLIC_CHAT_SERVER_URL=http://localhost:4000
 ```
 
-The frontend runs on `http://localhost:3000`, the chat server on `http://localhost:4000`, the translation service on `http://localhost:5000`, and PostgreSQL on `localhost:5432`.
+This value tells the browser where the Socket.IO chat server is running.
 
-Stop services:
+## Usage
 
-```powershell
-docker compose down
-```
+1. Open `http://localhost:3000`.
+2. Enter a user name.
+3. Enter a room ID and click `Join room`, or click `Create` to generate a room.
+4. Select translation direction:
+   - `Auto detect`
+   - `English -> Japanese`
+   - `Japanese -> English`
+5. Type a message and click `Send`.
+6. The UI shows a pending state while the message is sent and translated.
+7. When the server broadcasts the saved message, the frontend replaces the pending message using `clientMessageId`.
 
-## Development Commands
-
-Frontend:
-
-```powershell
-cd frontend
-pnpm.cmd lint
-pnpm.cmd build
-```
-
-Chat server:
-
-```powershell
-cd chat-server
-pnpm.cmd type-check
-pnpm.cmd build
-```
-
-Translation service:
-
-```powershell
-cd translate-service
-.\venv\Scripts\python.exe -m compileall app
-```
+Room history is loaded automatically after joining a room. The chat server returns the latest 100 messages in chronological display order.
 
 ## API Examples
 
-Chat server health check:
+### Chat Server Health Check
 
 ```powershell
 curl.exe http://localhost:4000/health
 ```
 
-Translation service health check:
+Example response:
+
+```json
+{
+  "status": "ok",
+  "service": "chat-server"
+}
+```
+
+### Translation Service Health Check
 
 ```powershell
 curl.exe http://localhost:5000/health
 ```
 
-Fetch room history:
+Example response:
+
+```json
+{
+  "status": "ok",
+  "service": "translate-service"
+}
+```
+
+### Fetch Room History
 
 ```powershell
 curl.exe http://localhost:4000/rooms/room1/messages
 ```
 
-Delete room history is disabled unless `ENABLE_ADMIN_ACTIONS=true`:
+Example response:
+
+```json
+{
+  "messages": [
+    {
+      "id": "uuid",
+      "roomId": "room1",
+      "userName": "user1",
+      "originalText": "Hello, how are you?",
+      "translatedText": "こんにちは、お元気ですか？",
+      "sourceLang": "en",
+      "targetLang": "ja",
+      "translationMs": 120,
+      "createdAt": "2026-06-21T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Delete Room History
+
+By default, deletion is blocked:
 
 ```powershell
 curl.exe -X DELETE http://localhost:4000/rooms/room1/messages
@@ -224,44 +407,232 @@ curl.exe -X DELETE http://localhost:4000/rooms/room1/messages
 Default response:
 
 ```json
-{ "message": "admin actions disabled" }
+{
+  "message": "admin actions disabled"
+}
+```
+
+To enable this endpoint in a trusted local/admin environment:
+
+```env
+ENABLE_ADMIN_ACTIONS=true
+```
+
+When enabled, the endpoint keeps the existing room ID validation and deletes messages for the requested room.
+
+## Socket.IO Events
+
+### `join_room`
+
+Client to server:
+
+```ts
+socket.emit("join_room", "room1");
+```
+
+Server behavior:
+
+- validates the room ID
+- leaves the previous active room if needed
+- stores the current room ID on `socket.data.roomId`
+- joins the requested room
+- emits `joined_room`
+- emits `room_history`
+
+### `send_message`
+
+Client to server:
+
+```ts
+socket.emit("send_message", {
+  roomId: "room1",
+  userName: "user1",
+  text: "I want to build a web application.",
+  translationDirection: "en-ja",
+  clientMessageId: "client-..."
+});
+```
+
+### `receive_message`
+
+Server to clients in the room:
+
+```json
+{
+  "id": "uuid",
+  "roomId": "room1",
+  "userName": "user1",
+  "originalText": "I want to build a web application.",
+  "translatedText": "Webアプリケーションを作りたいです。",
+  "sourceLang": "en",
+  "targetLang": "ja",
+  "translationMs": 95,
+  "cacheHit": false,
+  "clientMessageId": "client-...",
+  "createdAt": "2026-06-21T00:00:00.000Z"
+}
+```
+
+`clientMessageId` is optional for backward compatibility, but when present it allows the frontend to replace the exact pending message.
+
+### `message_status`
+
+Server to sender:
+
+```json
+{
+  "clientMessageId": "client-...",
+  "status": "translating"
+}
+```
+
+Possible statuses:
+
+- `translating`
+- `saved`
+- `error`
+
+## Development Commands
+
+### Frontend
+
+```powershell
+cd frontend
+pnpm.cmd install --frozen-lockfile
+pnpm.cmd lint
+pnpm.cmd build
+```
+
+### Chat Server
+
+```powershell
+cd chat-server
+pnpm.cmd install --frozen-lockfile
+pnpm.cmd type-check
+pnpm.cmd build
+```
+
+### Translation Service
+
+```powershell
+cd translate-service
+python -m compileall app
+```
+
+### Docker Compose Validation
+
+```powershell
+docker compose config
 ```
 
 ## CI
 
-GitHub Actions runs on `push` and `pull_request`:
+GitHub Actions runs on `push` and `pull_request`.
 
-- `frontend`: `pnpm install`, `pnpm lint`, `pnpm build`
-- `chat-server`: `pnpm install`, `pnpm type-check`, `pnpm build`
-- `translate-service`: install Python dependencies and run `python -m compileall app`
+The workflow validates each subproject independently:
 
-CI does not require PostgreSQL or the translation runtime to be running.
+- `frontend`
+  - `pnpm install --frozen-lockfile`
+  - `pnpm lint`
+  - `pnpm build`
+- `chat-server`
+  - `pnpm install --frozen-lockfile`
+  - `pnpm type-check`
+  - `pnpm build`
+- `translate-service`
+  - install Python dependencies
+  - `python -m compileall app`
+
+The CI workflow does not require PostgreSQL or the translation runtime to be running, which keeps it lightweight and suitable for pull requests.
+
+## Design Notes
+
+### Service-oriented Architecture
+
+TransChat separates the user interface, realtime server, translation service, and database. This makes each layer easier to test, explain, replace, and operate.
+
+### Maintainable Frontend Refactor
+
+The frontend is split by chat feature responsibility:
+
+- components render UI
+- hooks manage Socket.IO and local settings
+- lib files hold shared types and validation helpers
+
+This keeps `frontend/app/page.tsx` small and makes the chat feature easier to extend.
+
+### Local-first Translation
+
+Argos Translate keeps the project usable without paid translation APIs. This is useful for portfolio review because the app can demonstrate translation behavior without requiring external API keys.
+
+### Translation Timeout and Safe Fallback
+
+The chat server wraps translation requests with `AbortController`. Timeout, network failure, non-OK responses, and invalid responses return a safe fallback instead of crashing the socket handler.
+
+Fallback shape:
+
+```ts
+{
+  translatedText: null,
+  translationMs: null,
+  cacheHit: false
+}
+```
+
+### Validation First
+
+The system validates input at multiple boundaries:
+
+- frontend form validation
+- Socket.IO message payload validation
+- FastAPI schema validation for text length and supported languages
+- room ID validation for history APIs
+
+### Security Guard for Destructive API
+
+Room-history deletion is intentionally disabled by default. This avoids exposing a destructive endpoint in normal local/demo runs and documents the difference between regular user behavior and admin actions.
 
 ## Known Limitations
 
-- There is no full authentication or authorization yet.
-- Local and Docker Compose credentials are for development only and are not production credentials.
-- Argos Translate quality can vary, especially for short phrases or informal chat text.
-- The delete-history endpoint is a coarse admin action, not a user-level permission system.
-- Only English and Japanese are currently supported.
+- Authentication and user authorization are not implemented yet.
+- The current language focus is English and Japanese.
+- Argos Translate quality can vary, especially for short phrases, informal chat text, and ambiguous wording.
+- The local PostgreSQL credentials in `.env.example` and `docker-compose.yml` are development credentials, not production credentials.
+- Room deletion is a coarse admin operation, not a full permission model.
+- First-time translation service startup can take time because language packages may need to be checked or installed.
 
 ## Roadmap
 
 - Add authentication and room ownership
 - Add room list management
 - Add message search
+- Add user-level authorization for destructive actions
+- Improve mobile UI polish
+- Add more demo screenshots or GIFs
 - Add support for more languages
 - Add production deployment hardening
-- Add screenshots and GIFs
-- Improve mobile UI polish
+- Add more automated tests around pure validation and message handling logic
 
-## Demo Video
+## Portfolio Highlights
 
-[Watch the demo video](docs/videos/demo.mp4)
+TransChat demonstrates:
+
+- full-stack development across frontend, backend, service, and database layers
+- realtime communication with Socket.IO
+- local AI/translation model integration through Argos Translate
+- PostgreSQL persistence with Prisma
+- Docker Compose orchestration for a multi-service app
+- GitHub Actions CI across TypeScript and Python projects
+- error handling around network calls and service failures
+- safe defaults for destructive API behavior
+- maintainable frontend refactoring with components, hooks, and shared libraries
+- practical documentation for setup, architecture, usage, APIs, and limitations
 
 ## License
 
-This project is currently intended for learning and portfolio purposes. No formal open-source license has been added yet.
+This project is currently intended for learning and portfolio purposes.
+
+No formal open-source license has been added yet. If this project is reused, distributed, or published as an open-source project, an appropriate license such as the MIT License should be added.
 
 ## Author
 
@@ -270,3 +641,9 @@ Developed by **akito uemura**
 GitHub: [akitouemura-lab](https://github.com/akitouemura-lab)
 
 Repository: [trans-chat](https://github.com/akitouemura-lab/trans-chat)
+
+## Summary
+
+TransChat shows how realtime messaging, local translation, PostgreSQL persistence, Docker Compose, and CI can be combined into a practical full-stack application.
+
+The project is intentionally small enough to understand, but complete enough to demonstrate real engineering concerns: service boundaries, validation, optimistic UI, safe fallbacks, destructive-action guards, and maintainable frontend structure.
