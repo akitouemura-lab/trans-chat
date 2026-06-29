@@ -1,9 +1,11 @@
+import { useEffect, useRef } from "react";
 import type { DisplayMessage } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 
 type MessageListProps = {
   messages: DisplayMessage[];
   userName: string;
+  activeRoomId: string;
   isDarkMode: boolean;
   panelClass: string;
   mutedTextClass: string;
@@ -14,12 +16,21 @@ type MessageListProps = {
 export function MessageList({
   messages,
   userName,
+  activeRoomId,
   isDarkMode,
   panelClass,
   mutedTextClass,
   isPhraseSaved,
   onSavePhrase
 }: MessageListProps) {
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    bottomAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const hasActiveRoom = activeRoomId.trim().length > 0;
+
   return (
     <section
       className={
@@ -30,7 +41,9 @@ export function MessageList({
       {messages.length === 0 ? (
         <div className="flex min-h-80 items-center justify-center">
           <p className={"text-sm " + mutedTextClass}>
-            No messages yet. Send your first translated message.
+            {hasActiveRoom
+              ? "No messages yet. Send your first translated message."
+              : "Create a room or join with an invite to start chatting."}
           </p>
         </div>
       ) : (
@@ -47,6 +60,7 @@ export function MessageList({
           ))}
         </div>
       )}
+      <div ref={bottomAnchorRef} />
     </section>
   );
 }

@@ -8,6 +8,7 @@ import {
   deleteRoomMessages,
   getRoomMessages
 } from "./services/messageRepository.js";
+import { getRoomById } from "./services/roomRepository.js";
 
 type StoredMessage = {
   id: string;
@@ -18,7 +19,10 @@ type StoredMessage = {
   sourceLang: string | null;
   targetLang: string | null;
   translationMs: number | null;
+  translationStatus: string;
+  translationError: string | null;
   createdAt: Date;
+  updatedAt: Date;
 };
 
 dotenv.config();
@@ -80,7 +84,15 @@ app.get("/rooms/:roomId/messages", async (req, res) => {
       return;
     }
 
-    const messages = await getRoomMessages(roomId);
+    const room = await getRoomById(roomId);
+    if (!room) {
+      res.status(404).json({
+        message: "room not found"
+      });
+      return;
+    }
+
+    const messages = await getRoomMessages(room.id);
 
     res.json({
       messages: messages.map((message: StoredMessage) => ({
@@ -92,7 +104,10 @@ app.get("/rooms/:roomId/messages", async (req, res) => {
         sourceLang: message.sourceLang,
         targetLang: message.targetLang,
         translationMs: message.translationMs,
-        createdAt: message.createdAt.toISOString()
+        translationStatus: message.translationStatus,
+        translationError: message.translationError,
+        createdAt: message.createdAt.toISOString(),
+        updatedAt: message.updatedAt.toISOString()
       }))
     });
   } catch (error) {
@@ -121,11 +136,19 @@ app.delete("/rooms/:roomId/messages", async (req, res) => {
       return;
     }
 
-    const result = await deleteRoomMessages(roomId);
+    const room = await getRoomById(roomId);
+    if (!room) {
+      res.status(404).json({
+        message: "room not found"
+      });
+      return;
+    }
+
+    const result = await deleteRoomMessages(room.id);
 
     res.json({
       message: "messages deleted",
-      roomId,
+      roomId: room.id,
       deletedCount: result.count
     });
   } catch (error) {

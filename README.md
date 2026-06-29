@@ -41,8 +41,10 @@ TransChat focuses on keeping the user experience simple while making the interna
 ### Real-time Chat
 
 - Room-based realtime messaging with Socket.IO
+- Server-created rooms backed by PostgreSQL
+- Secure room IDs and invite tokens generated with Node crypto APIs
 - Room creation and room joining from the UI
-- Invite link copying with the active room ID in the URL
+- Invite link copying with a secure invite token in the URL
 - Connection status display
 - Separate rendering for your messages and messages from other users
 - Safe room switching so a socket leaves the previous room before joining the next one
@@ -51,23 +53,27 @@ TransChat focuses on keeping the user experience simple while making the interna
 
 - English to Japanese translation
 - Japanese to English translation
-- Auto translation direction based on simple language detection
+- Auto translation direction based on lightweight Japanese/English character counting
 - Manual translation direction selection
 - Local translation with Argos Translate
 - Translation latency shown per message when available
 - In-memory translation cache in the chat server to avoid repeated translation work for the same normalized text and language direction
+- Clear translation failure states for timeout, unavailable service, invalid response, and missing model cases
 
 ### Persistent Message History
 
 - PostgreSQL storage through Prisma
 - Original text and translated text stored together
-- Source language, target language, translation latency, room ID, user name, and timestamp metadata
+- Room/User data model foundation for future authentication and room ownership
+- Source language, target language, translation latency, translation status, room ID, user name, and timestamp metadata
 - Latest 100 messages loaded for each room
 - History is returned in chronological display order
 
-### Optimistic UI
+### Async Translation UX
 
 - Pending message state while a message is being sent and translated
+- Original messages are saved and broadcast before translation finishes
+- `message_updated` events update the translated text when translation completes
 - `message_status` events for `translating`, `saved`, and `error` states
 - `clientMessageId` support so pending messages are replaced by the matching server broadcast instead of guessing by text content
 - More stable behavior when the same user sends the same message multiple times
@@ -78,6 +84,7 @@ TransChat focuses on keeping the user experience simple while making the interna
 - Local browser persistence for user name, room ID, theme, and translation direction
 - Local translation history for recently translated messages
 - Saved phrases for frequently used bilingual expressions
+- Automatic scroll-to-bottom for new messages
 - Message input validation
 - Responsive chat layout
 
@@ -85,7 +92,9 @@ TransChat focuses on keeping the user experience simple while making the interna
 
 - Docker Compose for the full stack
 - GitHub Actions CI for frontend, chat server, and translation service checks
+- In-memory Socket.IO rate limiting per socket and per room
 - Translation request timeout with safe fallback
+- Argos model installation moved to an explicit setup script and Docker build step
 - Generic FastAPI error responses that do not expose raw internal exceptions
 - Destructive room-history deletion disabled by default unless admin actions are explicitly enabled
 
@@ -126,9 +135,9 @@ flowchart LR
 | Layer | Responsibility |
 | --- | --- |
 | `frontend/` | Renders the chat UI, manages local settings, handles optimistic messages, and talks to Socket.IO |
-| `chat-server/` | Validates messages, manages rooms, calls translation service, persists messages, and broadcasts events |
-| `translate-service/` | Validates translation requests and translates English/Japanese text with Argos Translate |
-| PostgreSQL | Stores message history and metadata |
+| `chat-server/` | Validates messages, creates rooms, resolves invite tokens, rate-limits clients, calls translation service, persists messages, and broadcasts events |
+| `translate-service/` | Validates translation requests, checks model readiness, and translates English/Japanese text with Argos Translate |
+| PostgreSQL | Stores rooms, invite tokens, guest users, message history, and translation metadata |
 | Docker Compose | Runs the full local service graph |
 
 ## Message Flow
@@ -141,21 +150,26 @@ sequenceDiagram
     participant Translate as FastAPI Translation Service
     participant DB as PostgreSQL
 
+    User->>Frontend: Create or join room
+    Frontend->>Socket: create_room or join_room
+    Socket->>DB: Create/resolve Room and Guest User
+    DB-->>Socket: Room with invite token
+    Socket-->>Frontend: joined_room and room_history
     User->>Frontend: Type and send message
     Frontend->>Frontend: Create pending message with clientMessageId
     Frontend->>Socket: send_message
-    Socket->>Socket: Validate room, user, text, languages
+    Socket->>Socket: Validate room, user, text, languages, and rate limits
+    Socket->>DB: Save original message as translationStatus=pending
+    DB-->>Socket: Stored original message
+    Socket-->>Frontend: receive_message with original text
     Socket-->>Frontend: message_status translating
-    Socket->>Translate: POST /translate
-    Translate->>Translate: Validate schema and translate text
-    Translate-->>Socket: translated text and metadata
-    Socket->>DB: Save message with Prisma
-    DB-->>Socket: Stored message
-    Socket-->>Frontend: receive_message with clientMessageId
-    Frontend->>Frontend: Replace matching pending message
+    Socket->>Translate: POST /translate asynchronously
+    Translate-->>Socket: translated text or clear failure
+    Socket->>DB: Update message translation status/result
+    Socket-->>Frontend: message_updated
 ```
 
-If translation times out, the translation service is unreachable, the response is invalid, or the service returns a non-OK response, the chat server returns a safe fallback shape instead of crashing the socket handler.
+If translation times out, the translation service is unreachable, the response is invalid, or a required local model is missing, the original message remains visible and the chat server updates the message as `translationStatus=failed`.
 
 ## Project Structure
 
@@ -192,8 +206,11 @@ trans-chat/
 |   |   `-- services/
 |   |       |-- db.ts
 |   |       |-- messageRepository.ts
+|   |       |-- rateLimiter.ts
+|   |       |-- roomRepository.ts
 |   |       `-- translation.ts
 |   |-- prisma/
+|   |   |-- migrations/
 |   |   `-- schema.prisma
 |   |-- Dockerfile
 |   `-- .env.example
@@ -203,6 +220,10 @@ trans-chat/
 |   |   |-- main.py
 |   |   |-- schemas.py
 |   |   `-- translator.py
+|   |-- scripts/
+|   |   `-- install_argos_models.py
+|   |-- tests/
+|   |   `-- test_translator.py
 |   |-- Dockerfile
 |   `-- requirements.txt
 |
@@ -263,7 +284,7 @@ Stop the stack:
 docker compose down
 ```
 
-The translation service may take longer on first startup because Argos Translate checks and installs language packages when needed.
+The Docker image installs the required Argos Translate language packages during build, not during FastAPI startup. This keeps normal service startup independent of network availability.
 
 ### Local Development Startup
 
@@ -275,13 +296,14 @@ docker compose up -d postgres
 cd chat-server
 pnpm.cmd install
 pnpm.cmd exec prisma generate
-pnpm.cmd exec prisma migrate dev --name init_messages
+pnpm.cmd exec prisma migrate dev
 cd ..
 
 cd translate-service
 py -3.11 -m venv venv
 .\venv\Scripts\python.exe -m pip install --upgrade pip
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe .\scripts\install_argos_models.py
 cd ..
 
 cd frontend
@@ -301,7 +323,7 @@ Stop local development services:
 powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
 ```
 
-The helper scripts derive the project root from the script location, so they do not depend on a hard-coded checkout path.
+The helper scripts derive the project root from the script location, so they do not depend on a hard-coded checkout path. Local development requires the Argos setup script above before translation can succeed; otherwise `/health` reports missing models and translation requests return HTTP 503.
 
 ## Access from Another Device on the Same LAN
 
@@ -405,7 +427,14 @@ CLIENT_ORIGIN=http://localhost:3000
 # LAN_HOST=192.168.1.20
 # CLIENT_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.20:3000
 TRANSLATE_SERVICE_URL=http://localhost:5000
-TRANSLATE_TIMEOUT_MS=5000
+TRANSLATE_TIMEOUT_MS=15000
+
+MESSAGE_RATE_LIMIT_WINDOW_MS=10000
+MESSAGE_RATE_LIMIT_MAX=5
+ROOM_RATE_LIMIT_WINDOW_MS=10000
+ROOM_RATE_LIMIT_MAX=30
+
+# Development-only database credentials. Change these before any production use.
 DATABASE_URL=postgresql://transchat:transchat_password@localhost:5432/transchat?schema=public
 ENABLE_ADMIN_ACTIONS=false
 ```
@@ -417,10 +446,16 @@ ENABLE_ADMIN_ACTIONS=false
 | `LAN_HOST` | Optional LAN IPv4 address. When present, `http://<LAN_HOST>:3000` is added to allowed origins. |
 | `TRANSLATE_SERVICE_URL` | FastAPI translation service URL |
 | `TRANSLATE_TIMEOUT_MS` | Timeout for translation HTTP requests |
+| `MESSAGE_RATE_LIMIT_WINDOW_MS` | Per-socket message rate limit window |
+| `MESSAGE_RATE_LIMIT_MAX` | Maximum messages per socket in the window |
+| `ROOM_RATE_LIMIT_WINDOW_MS` | Per-room aggregate message rate limit window |
+| `ROOM_RATE_LIMIT_MAX` | Maximum messages per room in the window |
 | `DATABASE_URL` | PostgreSQL connection string for Prisma |
 | `ENABLE_ADMIN_ACTIONS` | Enables destructive admin-only endpoints when set to `true` |
 
 `ENABLE_ADMIN_ACTIONS=false` is the safe default. With this setting, `DELETE /rooms/:roomId/messages` returns HTTP 403 and does not delete history. Set it to `true` only in a trusted local/admin environment.
+
+The default `transchat_password` value is for local development only. Change database credentials before production use, do not commit real `.env` files, and use a secret manager or deployment platform secret storage in production.
 
 ### `frontend/.env.example`
 
@@ -433,19 +468,28 @@ NEXT_PUBLIC_CHAT_SERVER_URL=http://localhost:4000
 
 This value tells the browser where the Socket.IO chat server is running. When testing from another device, it must use the development PC's LAN IP address instead of `localhost`.
 
+## Security Notes
+
+- This is a local-first portfolio prototype, not a production chat service.
+- Change PostgreSQL user names and passwords before production use.
+- Do not commit real `.env` or `.env.local` files.
+- Use deployment secrets or a secret manager for production configuration.
+- The current Room/User model is a privacy foundation, but it is not a full authentication or authorization system yet.
+- In-memory rate limiting protects local demos but should be replaced with Redis-backed limiting for multi-instance production deployments.
+
 ## Usage
 
 1. Open `http://localhost:3000`.
 2. Enter a user name.
-3. Enter a room ID and click `Join room`, or click `Create` to generate a room.
-4. Click `Copy invite` to share a URL that opens the same room.
+3. Click `Create` to create a secure server-backed room, or paste a room ID / invite token and click `Join room`.
+4. Click `Copy invite` to share an invite URL with the active room token.
 5. Select translation direction:
    - `Auto detect`
    - `English -> Japanese`
    - `Japanese -> English`
 6. Type a message and click `Send`.
-7. The UI shows a pending state while the message is sent and translated.
-8. When the server broadcasts the saved message, the frontend replaces the pending message using `clientMessageId`.
+7. The UI shows a pending state while the original message is saved.
+8. The original message appears quickly, then updates when translation completes.
 9. Use `Save phrase` or the translation memory panel to store frequently used expressions locally.
 
 Room history is loaded automatically after joining a room. The chat server returns the latest 100 messages in chronological display order.
@@ -480,14 +524,16 @@ Example response:
 ```json
 {
   "status": "ok",
-  "service": "translate-service"
+  "service": "translate-service",
+  "modelsReady": true,
+  "missingPairs": []
 }
 ```
 
 ### Fetch Room History
 
 ```powershell
-curl.exe http://localhost:4000/rooms/room1/messages
+curl.exe http://localhost:4000/rooms/5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44/messages
 ```
 
 Example response:
@@ -497,14 +543,17 @@ Example response:
   "messages": [
     {
       "id": "uuid",
-      "roomId": "room1",
+      "roomId": "5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44",
       "userName": "user1",
       "originalText": "Hello, how are you?",
       "translatedText": "Japanese translation text",
       "sourceLang": "en",
       "targetLang": "ja",
       "translationMs": 120,
-      "createdAt": "2026-06-21T00:00:00.000Z"
+      "translationStatus": "completed",
+      "translationError": null,
+      "createdAt": "2026-06-21T00:00:00.000Z",
+      "updatedAt": "2026-06-21T00:00:00.500Z"
     }
   ]
 }
@@ -515,7 +564,7 @@ Example response:
 By default, deletion is blocked:
 
 ```powershell
-curl.exe -X DELETE http://localhost:4000/rooms/room1/messages
+curl.exe -X DELETE http://localhost:4000/rooms/5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44/messages
 ```
 
 Default response:
@@ -536,21 +585,44 @@ When enabled, the endpoint keeps the existing room ID validation and deletes mes
 
 ## Socket.IO Events
 
+### `create_room`
+
+Client to server:
+
+```ts
+socket.emit("create_room", {
+  userName: "user1"
+});
+```
+
+Server behavior:
+
+- validates the display name
+- creates a secure Room ID and invite token
+- creates or reuses a guest User record
+- joins the socket to the new room
+- emits `room_created`
+- emits `joined_room`
+- emits empty `room_history`
+
 ### `join_room`
 
 Client to server:
 
 ```ts
-socket.emit("join_room", "room1");
+socket.emit("join_room", {
+  roomIdOrInvite: "invite-token-or-room-id"
+});
 ```
 
 Server behavior:
 
-- validates the room ID
+- resolves the invite token or room ID against PostgreSQL
+- rejects missing or unknown rooms
 - leaves the previous active room if needed
 - stores the current room ID on `socket.data.roomId`
 - joins the requested room
-- emits `joined_room`
+- emits `joined_room` with room ID, display name, and invite token
 - emits `room_history`
 
 ### `send_message`
@@ -559,7 +631,7 @@ Client to server:
 
 ```ts
 socket.emit("send_message", {
-  roomId: "room1",
+  roomId: "5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44",
   userName: "user1",
   text: "I want to build a web application.",
   translationDirection: "en-ja",
@@ -574,20 +646,46 @@ Server to clients in the room:
 ```json
 {
   "id": "uuid",
-  "roomId": "room1",
+  "roomId": "5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44",
+  "userName": "user1",
+  "originalText": "I want to build a web application.",
+  "translatedText": null,
+  "sourceLang": null,
+  "targetLang": "ja",
+  "translationMs": null,
+  "translationStatus": "pending",
+  "translationError": null,
+  "clientMessageId": "client-...",
+  "createdAt": "2026-06-21T00:00:00.000Z",
+  "updatedAt": "2026-06-21T00:00:00.000Z"
+}
+```
+
+`clientMessageId` is optional for backward compatibility, but when present it allows the frontend to replace the exact pending message. Translation continues asynchronously after this event.
+
+### `message_updated`
+
+Server to clients in the room:
+
+```json
+{
+  "id": "uuid",
+  "roomId": "5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44",
   "userName": "user1",
   "originalText": "I want to build a web application.",
   "translatedText": "Japanese translation text",
   "sourceLang": "en",
   "targetLang": "ja",
   "translationMs": 95,
+  "translationStatus": "completed",
+  "translationError": null,
   "cacheHit": false,
-  "clientMessageId": "client-...",
-  "createdAt": "2026-06-21T00:00:00.000Z"
+  "createdAt": "2026-06-21T00:00:00.000Z",
+  "updatedAt": "2026-06-21T00:00:00.500Z"
 }
 ```
 
-`clientMessageId` is optional for backward compatibility, but when present it allows the frontend to replace the exact pending message.
+If translation fails, `translationStatus` becomes `failed`, `translatedText` remains `null`, and `translationError` contains a user-safe explanation.
 
 ### `message_status`
 
@@ -622,6 +720,7 @@ pnpm.cmd build
 ```powershell
 cd chat-server
 pnpm.cmd install --frozen-lockfile
+pnpm.cmd exec prisma generate
 pnpm.cmd type-check
 pnpm.cmd build
 ```
@@ -630,7 +729,9 @@ pnpm.cmd build
 
 ```powershell
 cd translate-service
-python -m compileall app
+python scripts/install_argos_models.py
+python -m compileall app scripts tests
+python -m unittest discover -s tests
 ```
 
 ### Docker Compose Validation
@@ -651,11 +752,13 @@ The workflow validates each subproject independently:
   - `pnpm build`
 - `chat-server`
   - `pnpm install --frozen-lockfile`
+  - `pnpm exec prisma generate`
   - `pnpm type-check`
   - `pnpm build`
 - `translate-service`
   - install Python dependencies
-  - `python -m compileall app`
+  - `python -m compileall app scripts tests`
+  - `python -m unittest discover -s tests`
 
 The CI workflow does not require PostgreSQL or the translation runtime to be running, which keeps it lightweight and suitable for pull requests.
 
@@ -664,6 +767,8 @@ The CI workflow does not require PostgreSQL or the translation runtime to be run
 ### Service-oriented Architecture
 
 TransChat separates the user interface, realtime server, translation service, and database. This makes each layer easier to test, explain, replace, and operate.
+
+Rooms and users are now first-class database records. The current user model is still a guest-user foundation rather than production authentication, but it gives the application a cleaner path toward room ownership, membership, and authorization.
 
 ### Maintainable Frontend Refactor
 
@@ -679,9 +784,11 @@ This keeps `frontend/app/page.tsx` small and makes the chat feature easier to ex
 
 Argos Translate keeps the project usable without paid translation APIs. This is useful for portfolio review because the app can demonstrate translation behavior without requiring external API keys.
 
+Required Argos packages are installed by `translate-service/scripts/install_argos_models.py`. Docker builds run this setup step during image build, and FastAPI startup only checks model readiness.
+
 ### Translation Timeout and Safe Fallback
 
-The chat server wraps translation requests with `AbortController`. Timeout, network failure, non-OK responses, and invalid responses return a safe fallback instead of crashing the socket handler.
+The chat server wraps translation requests with `AbortController`. Timeout, network failure, non-OK responses, invalid responses, and missing language models produce user-safe translation failure states instead of crashing the socket handler.
 
 Fallback shape:
 
@@ -689,9 +796,19 @@ Fallback shape:
 {
   translatedText: null,
   translationMs: null,
-  cacheHit: false
+  cacheHit: false,
+  errorCode: "timeout",
+  errorMessage: "Translation service timed out."
 }
 ```
+
+### Async Translation
+
+The chat server saves and broadcasts the original message before translation finishes. This keeps chat responsive even when local translation is slow. A later `message_updated` event fills in the translated text or marks translation as failed.
+
+### In-memory Rate Limiting
+
+Socket.IO message sends are rate-limited per socket and per room. The defaults are 5 messages per socket and 30 messages per room every 10 seconds. This protects the local translation service during demos; production deployments should use a shared Redis-backed limiter.
 
 ### Validation First
 
@@ -700,28 +817,47 @@ The system validates input at multiple boundaries:
 - frontend form validation
 - Socket.IO message payload validation
 - FastAPI schema validation for text length and supported languages
-- room ID validation for history APIs
+- room ID and invite token validation for room joins and history APIs
 
 ### Security Guard for Destructive API
 
 Room-history deletion is intentionally disabled by default. This avoids exposing a destructive endpoint in normal local/demo runs and documents the difference between regular user behavior and admin actions.
 
+## Completed
+
+- Server-created rooms with secure UUID room IDs and invite tokens
+- Guest User model and Message-to-Room/User relationships in Prisma
+- No automatic fallback to `room1`
+- Invite links based on secure invite tokens
+- Async translation flow with `receive_message` followed by `message_updated`
+- Translation status tracking with `pending`, `completed`, and `failed`
+- In-memory message rate limiting for sockets and rooms
+- Argos model installation moved out of FastAPI startup
+- Lightweight Japanese/English detection with unit tests
+- Automatic scroll-to-bottom for new messages
+- Local translation history and saved phrases in browser storage
+
 ## Known Limitations
 
 - Authentication and user authorization are not implemented yet.
+- Room invite tokens are required for invite links, but there is not yet a full membership table or per-user authorization policy.
+- Rate limiting is in-memory, so it resets on server restart and is not shared across multiple server instances.
 - The current language focus is English and Japanese.
 - Argos Translate quality can vary, especially for short phrases, informal chat text, and ambiguous wording.
+- Local development requires Argos model installation before translation is fully ready.
 - Translation history and saved phrases are local to the current browser because authentication and user accounts are not implemented yet.
 - The local PostgreSQL credentials in `.env.example` and `docker-compose.yml` are development credentials, not production credentials.
 - Room deletion is a coarse admin operation, not a full permission model.
-- First-time translation service startup can take time because language packages may need to be checked or installed.
+- Docker image builds can take time because Argos packages are installed during build.
 
 ## Roadmap
 
 - Add authentication and room ownership
-- Add room list management
+- Add room membership and role-based permissions
+- Add room list management for authenticated users
 - Add message search
 - Add user-level authorization for destructive actions
+- Add retry translation action for failed translations
 - Improve mobile UI polish
 - Add more demo screenshots or GIFs
 - Add support for more languages
@@ -734,11 +870,14 @@ TransChat demonstrates:
 
 - full-stack development across frontend, backend, service, and database layers
 - realtime communication with Socket.IO
+- Room/User data modeling with secure invite-token room access
+- async translation updates that keep original messages visible
 - local AI/translation model integration through Argos Translate
 - PostgreSQL persistence with Prisma
 - Docker Compose orchestration for a multi-service app
 - GitHub Actions CI across TypeScript and Python projects
 - error handling around network calls and service failures
+- in-memory rate limiting and destructive-action guards
 - safe defaults for destructive API behavior
 - maintainable frontend refactoring with components, hooks, and shared libraries
 - practical documentation for setup, architecture, usage, APIs, and limitations

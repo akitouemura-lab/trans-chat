@@ -4,6 +4,7 @@ import type { TranslationDirection } from "../lib/types";
 type RoomControlsProps = {
   userName: string;
   roomInput: string;
+  activeRoomId: string;
   translationDirection: TranslationDirection;
   inviteLink: string;
   inviteStatusMessage: string;
@@ -26,6 +27,7 @@ type RoomControlsProps = {
 export function RoomControls({
   userName,
   roomInput,
+  activeRoomId,
   translationDirection,
   inviteLink,
   inviteStatusMessage,
@@ -49,6 +51,8 @@ export function RoomControls({
     : isLoadingHistory
       ? "Loading room history..."
       : statusMessage;
+  const canJoinRoom = roomInput.trim().length > 0 && !isLoadingHistory;
+  const hasActiveRoom = activeRoomId.trim().length > 0;
 
   return (
     <section className={"mb-4 rounded-2xl border p-4 shadow-xl " + panelClass}>
@@ -64,11 +68,14 @@ export function RoomControls({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className={"text-sm " + mutedTextClass}>Room ID</span>
+          <span className={"text-sm " + mutedTextClass}>
+            Room ID / invite token
+          </span>
           <input
             className={"rounded-lg border px-3 py-2 outline-none " + inputClass}
             value={roomInput}
-            maxLength={50}
+            maxLength={128}
+            placeholder="Create a room or paste an invite token"
             onChange={(event) => onRoomInputChange(event.target.value)}
           />
         </label>
@@ -93,7 +100,7 @@ export function RoomControls({
         <button
           type="button"
           onClick={onJoinRoom}
-          disabled={!isConnected || isLoadingHistory}
+          disabled={!isConnected || !canJoinRoom}
           className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-500"
         >
           {isLoadingHistory ? "Joining..." : "Join room"}
@@ -136,7 +143,7 @@ export function RoomControls({
         <button
           type="button"
           onClick={onDeleteHistory}
-          disabled={isDeletingHistory}
+          disabled={!hasActiveRoom || isDeletingHistory}
           className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-red-900"
         >
           {isDeletingHistory ? "Deleting..." : "Delete room history"}

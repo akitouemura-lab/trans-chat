@@ -1,35 +1,45 @@
 import logging
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from app.schemas import TranslateRequest, TranslateResponse
-from app.translator import install_language_packages, translate_text
+from app.translator import (
+    MissingLanguageModelError,
+    are_required_packages_installed,
+    get_missing_pairs,
+    translate_text,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    install_language_packages()
-    yield
-
-
 app = FastAPI(
     title="TransChat Translate Service",
-    lifespan=lifespan,
 )
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, object]:
+    missing_pairs = get_missing_pairs()
+    models_ready = len(missing_pairs) == 0
+
     return {
-        "status": "ok",
+        "status": "ok" if models_ready else "degraded",
         "service": "translate-service",
+        "modelsReady": models_ready,
+        "missingPairs": [
+            {"source": source, "target": target} for source, target in missing_pairs
+        ],
     }
 
 
 @app.post("/translate", response_model=TranslateResponse)
 def translate(request: TranslateRequest) -> TranslateResponse:
+    if not are_required_packages_installed():
+        raise HTTPException(
+            status_code=503,
+            detail="Required Argos language model is not installed.",
+        )
+
     try:
         translated_text, translation_ms, actual_source_lang = translate_text(
             request.text,
@@ -44,6 +54,11 @@ def translate(request: TranslateRequest) -> TranslateResponse:
             translation_ms=translation_ms,
         )
 
+    except MissingLanguageModelError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Required Argos language model is not installed.",
+        ) from error
     except Exception as error:
         logger.exception("translation failed")
         raise HTTPException(

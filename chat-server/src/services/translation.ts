@@ -19,7 +19,16 @@ export type TranslationResult = {
   targetLang: TargetLang;
   translationMs: number | null;
   cacheHit: boolean;
+  errorCode?: TranslationErrorCode;
+  errorMessage?: string;
 };
+
+export type TranslationErrorCode =
+  | "timeout"
+  | "service_unavailable"
+  | "service_error"
+  | "invalid_response"
+  | "missing_model";
 
 type CachedTranslation = {
   translatedText: string;
@@ -29,12 +38,26 @@ type CachedTranslation = {
 };
 
 const MAX_CACHE_SIZE = 300;
-const DEFAULT_TRANSLATE_TIMEOUT_MS = 5000;
+const DEFAULT_TRANSLATE_TIMEOUT_MS = 15000;
 const translationCache = new Map<string, CachedTranslation>();
 
 export function detectTargetLang(text: string): TargetLang {
-  const hasJapanese = /[\u3040-\u30ff\u3400-\u9fff]/.test(text);
-  return hasJapanese ? "en" : "ja";
+  let japaneseCount = 0;
+  let englishCount = 0;
+
+  for (const char of text) {
+    if (/[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/.test(char)) {
+      japaneseCount += 1;
+    } else if (/[a-zA-Z]/.test(char)) {
+      englishCount += 1;
+    }
+  }
+
+  if (japaneseCount > englishCount) return "en";
+  if (englishCount > japaneseCount) return "ja";
+  if (japaneseCount > 0) return "en";
+
+  return "ja";
 }
 
 function normalizeText(text: string): string {
@@ -58,14 +81,18 @@ function saveToCache(key: string, value: CachedTranslation): void {
 
 function createFallbackResult(
   sourceLang: SourceLang,
-  targetLang: TargetLang
+  targetLang: TargetLang,
+  errorCode: TranslationErrorCode,
+  errorMessage: string
 ): TranslationResult {
   return {
     translatedText: null,
     sourceLang,
     targetLang,
     translationMs: null,
-    cacheHit: false
+    cacheHit: false,
+    errorCode,
+    errorMessage
   };
 }
 
@@ -117,7 +144,12 @@ export async function translateMessage(
   const sourceLang = options.sourceLang ?? "auto";
 
   if (originalText.length === 0) {
-    return createFallbackResult(sourceLang, targetLang);
+    return createFallbackResult(
+      sourceLang,
+      targetLang,
+      "invalid_response",
+      "Message was empty after normalization."
+    );
   }
 
   if (sourceLang !== "auto" && sourceLang === targetLang) {
@@ -163,14 +195,36 @@ export async function translateMessage(
     if (!response.ok) {
       console.error("translate-service error:", response.status);
 
-      return createFallbackResult(sourceLang, targetLang);
+      let errorCode: TranslationErrorCode = "service_error";
+      let errorMessage = "Translation service returned an error.";
+
+      try {
+        const body = (await response.json()) as { detail?: unknown };
+        if (
+          response.status === 503 &&
+          typeof body.detail === "string" &&
+          body.detail.toLowerCase().includes("model")
+        ) {
+          errorCode = "missing_model";
+          errorMessage = "Required translation model is not installed.";
+        }
+      } catch {
+        // Keep the generic service error.
+      }
+
+      return createFallbackResult(sourceLang, targetLang, errorCode, errorMessage);
     }
 
     const data: unknown = await response.json();
 
     if (!isTranslateResponse(data)) {
       console.error("translate-service returned an invalid response");
-      return createFallbackResult(sourceLang, targetLang);
+      return createFallbackResult(
+        sourceLang,
+        targetLang,
+        "invalid_response",
+        "Translation service returned an invalid response."
+      );
     }
 
     const result: CachedTranslation = {
@@ -191,11 +245,21 @@ export async function translateMessage(
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       console.error("translation request timed out");
+      return createFallbackResult(
+        sourceLang,
+        targetLang,
+        "timeout",
+        "Translation service timed out."
+      );
     } else {
       console.error("translation request failed");
+      return createFallbackResult(
+        sourceLang,
+        targetLang,
+        "service_unavailable",
+        "Translation service is unavailable."
+      );
     }
-
-    return createFallbackResult(sourceLang, targetLang);
   } finally {
     clearTimeout(timeout);
   }

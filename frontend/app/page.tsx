@@ -20,6 +20,8 @@ export default function Home() {
     setRoomInput,
     activeRoomId,
     setActiveRoomId,
+    activeInviteToken,
+    setActiveInviteToken,
     translationDirection,
     setTranslationDirection,
     isDarkMode,
@@ -27,11 +29,12 @@ export default function Home() {
   } = useLocalChatSettings();
 
   const handleRoomChange = useCallback(
-    (roomId: string) => {
-      setActiveRoomId(roomId);
-      setRoomInput(roomId);
+    (room: { roomId: string; inviteToken: string }) => {
+      setActiveRoomId(room.roomId);
+      setActiveInviteToken(room.inviteToken);
+      setRoomInput(room.roomId);
     },
-    [setActiveRoomId, setRoomInput]
+    [setActiveInviteToken, setActiveRoomId, setRoomInput]
   );
 
   const {
@@ -59,13 +62,14 @@ export default function Home() {
     sendMessage
   } = useChatSocket({
     activeRoomId,
+    activeInviteToken,
     userName,
     translationDirection,
     onRoomChange: handleRoomChange,
     onTranslatedMessages: recordMessages
   });
   const { inviteLink, inviteStatusMessage, copyInviteLink } =
-    useRoomInviteLink(activeRoomId);
+    useRoomInviteLink(activeInviteToken);
 
   const handleUseMemoryText = useCallback((nextText: string) => {
     setText(nextText);
@@ -102,6 +106,7 @@ export default function Home() {
         <RoomControls
           userName={userName}
           roomInput={roomInput}
+          activeRoomId={activeRoomId}
           translationDirection={translationDirection}
           inviteLink={inviteLink}
           inviteStatusMessage={inviteStatusMessage}
@@ -139,6 +144,7 @@ export default function Home() {
         <MessageList
           messages={messages}
           userName={userName}
+          activeRoomId={activeRoomId}
           isDarkMode={isDarkMode}
           panelClass={panelClass}
           mutedTextClass={mutedTextClass}

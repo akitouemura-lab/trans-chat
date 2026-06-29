@@ -1,4 +1,11 @@
 export type TranslationDirection = "auto" | "en-ja" | "ja-en";
+export type TranslationStatus = "pending" | "completed" | "failed";
+
+export type JoinedRoom = {
+  roomId: string;
+  roomName: string | null;
+  inviteToken: string;
+};
 
 export type ChatMessage = {
   id: string;
@@ -9,9 +16,12 @@ export type ChatMessage = {
   sourceLang: string | null;
   targetLang: string | null;
   translationMs: number | null;
+  translationStatus: TranslationStatus;
+  translationError: string | null;
   cacheHit?: boolean;
   clientMessageId?: string;
   createdAt: string;
+  updatedAt: string;
 };
 
 export type PendingChatMessage = {
@@ -24,8 +34,11 @@ export type PendingChatMessage = {
   sourceLang: string | null;
   targetLang: string | null;
   translationMs: null;
+  translationStatus: "pending";
+  translationError: null;
   cacheHit?: boolean;
   createdAt: string;
+  updatedAt: string;
   isPending: true;
   status: "sending" | "translating" | "error";
 };

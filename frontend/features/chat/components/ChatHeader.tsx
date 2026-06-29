@@ -27,6 +27,8 @@ export function ChatHeader({
   mutedTextClass,
   onToggleTheme
 }: ChatHeaderProps) {
+  const roomLabel = activeRoomId.trim() || "No active room";
+
   return (
     <header
       className={
@@ -41,7 +43,7 @@ export function ChatHeader({
             Real-time Translation Chat
           </h1>
           <p className={"mt-1 text-sm " + mutedTextClass}>
-            Room: <span className="font-semibold">{activeRoomId}</span> / User:{" "}
+            Room: <span className="font-semibold">{roomLabel}</span> / User:{" "}
             <span className="font-semibold">
               {userName.trim() || "No name"}
             </span>

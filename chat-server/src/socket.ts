@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import {
   detectTargetLang,
@@ -8,10 +7,20 @@ import {
 } from "./services/translation.js";
 import {
   getRoomMessages,
-  saveMessage
+  saveMessage,
+  updateMessageTranslation
 } from "./services/messageRepository.js";
+import {
+  createOrGetGuestUser,
+  createRoom,
+  getRoomById,
+  getRoomByInviteToken,
+  type RoomSummary
+} from "./services/roomRepository.js";
+import { checkMessageRateLimit } from "./services/rateLimiter.js";
 
 type TranslationDirection = "auto" | "en-ja" | "ja-en";
+type TranslationStatus = "pending" | "completed" | "failed";
 
 type ValidatedMessagePayload = {
   roomId: string;
@@ -31,9 +40,18 @@ type ChatMessage = {
   sourceLang: string | null;
   targetLang: string | null;
   translationMs: number | null;
+  translationStatus: TranslationStatus;
+  translationError: string | null;
   cacheHit?: boolean;
   clientMessageId?: string;
   createdAt: string;
+  updatedAt: string;
+};
+
+type JoinedRoomPayload = {
+  roomId: string;
+  roomName: string | null;
+  inviteToken: string;
 };
 
 type ValidationResult =
@@ -64,9 +82,21 @@ function isTranslationDirection(value: unknown): value is TranslationDirection {
 
 function validateRoomId(roomId: string): string | null {
   if (roomId.length === 0) return "Room ID is required.";
-  if (roomId.length > 50) return "Room ID must be 50 characters or less.";
+  if (roomId.length > 80) return "Room ID must be 80 characters or less.";
   if (!/^[a-zA-Z0-9_-]+$/.test(roomId)) {
     return "Room ID can only contain letters, numbers, hyphens, and underscores.";
+  }
+
+  return null;
+}
+
+function validateInviteToken(inviteToken: string): string | null {
+  if (inviteToken.length === 0) return "Invite token is required.";
+  if (inviteToken.length > 128) {
+    return "Invite token must be 128 characters or less.";
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(inviteToken)) {
+    return "Invite token is invalid.";
   }
 
   return null;
@@ -165,6 +195,14 @@ function validateMessagePayload(payload: unknown): ValidationResult {
   };
 }
 
+function toRoomPayload(room: RoomSummary): JoinedRoomPayload {
+  return {
+    roomId: room.id,
+    roomName: room.name,
+    inviteToken: room.inviteToken
+  };
+}
+
 function toChatMessage(
   message: {
     id: string;
@@ -175,10 +213,19 @@ function toChatMessage(
     sourceLang: string | null;
     targetLang: string | null;
     translationMs: number | null;
+    translationStatus: string;
+    translationError: string | null;
     createdAt: Date;
+    updatedAt: Date;
   },
   clientMessageId?: string
 ): ChatMessage {
+  const translationStatus: TranslationStatus =
+    message.translationStatus === "completed" ||
+    message.translationStatus === "failed"
+      ? message.translationStatus
+      : "pending";
+
   const chatMessage: ChatMessage = {
     id: message.id,
     roomId: message.roomId,
@@ -188,7 +235,10 @@ function toChatMessage(
     sourceLang: message.sourceLang,
     targetLang: message.targetLang,
     translationMs: message.translationMs,
-    createdAt: message.createdAt.toISOString()
+    translationStatus,
+    translationError: message.translationError,
+    createdAt: message.createdAt.toISOString(),
+    updatedAt: message.updatedAt.toISOString()
   };
 
   if (clientMessageId) {
@@ -213,40 +263,154 @@ function emitMessageStatus(
   });
 }
 
+async function resolveRoomFromJoinPayload(
+  payload: unknown
+): Promise<RoomSummary | null> {
+  if (typeof payload === "string") {
+    const value = payload.trim();
+    if (value.length === 0) return null;
+
+    const tokenError = validateInviteToken(value);
+    if (!tokenError) {
+      const roomByToken = await getRoomByInviteToken(value);
+      if (roomByToken) return roomByToken;
+    }
+
+    const roomError = validateRoomId(value);
+    if (!roomError) return getRoomById(value);
+
+    return null;
+  }
+
+  if (!isRecord(payload)) return null;
+
+  const inviteToken =
+    typeof payload.inviteToken === "string" ? payload.inviteToken.trim() : "";
+  const roomId = typeof payload.roomId === "string" ? payload.roomId.trim() : "";
+  const roomIdOrInvite =
+    typeof payload.roomIdOrInvite === "string"
+      ? payload.roomIdOrInvite.trim()
+      : "";
+
+  if (inviteToken.length > 0 && validateInviteToken(inviteToken) === null) {
+    return getRoomByInviteToken(inviteToken);
+  }
+
+  if (roomId.length > 0 && validateRoomId(roomId) === null) {
+    return getRoomById(roomId);
+  }
+
+  if (roomIdOrInvite.length > 0) {
+    return resolveRoomFromJoinPayload(roomIdOrInvite);
+  }
+
+  return null;
+}
+
+async function joinSocketToRoom(socket: Socket, room: RoomSummary) {
+  const previousRoomId =
+    typeof socket.data.roomId === "string" ? socket.data.roomId : null;
+
+  if (previousRoomId && previousRoomId !== room.id) {
+    socket.leave(previousRoomId);
+  }
+
+  socket.data.roomId = room.id;
+  socket.join(room.id);
+  socket.emit("joined_room", toRoomPayload(room));
+  console.log(socket.id + " joined room: " + room.id);
+
+  const messages = await getRoomMessages(room.id);
+  socket.emit(
+    "room_history",
+    messages.map((message) => toChatMessage(message))
+  );
+}
+
+async function translateAndBroadcast(
+  io: Server,
+  roomId: string,
+  messageId: string,
+  originalText: string,
+  sourceLang: SourceLang,
+  targetLang: TargetLang
+) {
+  const translation = await translateMessage(originalText, {
+    sourceLang,
+    targetLang
+  });
+  const translationStatus: TranslationStatus = translation.translatedText
+    ? "completed"
+    : "failed";
+
+  try {
+    const updatedMessage = await updateMessageTranslation(messageId, {
+      translatedText: translation.translatedText,
+      sourceLang: translation.sourceLang,
+      targetLang: translation.targetLang,
+      translationMs: translation.translationMs,
+      translationStatus,
+      translationError:
+        translationStatus === "failed"
+          ? (translation.errorMessage ?? "Translation failed.")
+          : null
+    });
+
+    const payload: ChatMessage = {
+      ...toChatMessage(updatedMessage),
+      cacheHit: translation.cacheHit
+    };
+
+    io.to(roomId).emit("message_updated", payload);
+  } catch (error) {
+    console.error("failed to update translated message:", error);
+  }
+}
+
 export function registerSocketHandlers(io: Server) {
   io.on("connection", (socket: Socket) => {
     console.log("connected: " + socket.id);
 
-    socket.on("join_room", async (roomIdInput: unknown) => {
-      const roomId = typeof roomIdInput === "string" ? roomIdInput.trim() : "";
-      const roomError = validateRoomId(roomId);
+    socket.on("create_room", async (payload: unknown) => {
+      const roomName =
+        isRecord(payload) && typeof payload.roomName === "string"
+          ? payload.roomName.trim()
+          : undefined;
+      const userName =
+        isRecord(payload) && typeof payload.userName === "string"
+          ? payload.userName.trim()
+          : "";
 
-      if (roomError) {
-        socket.emit("error_message", roomError);
+      const userNameError = validateUserName(userName);
+      if (userNameError) {
+        socket.emit("error_message", userNameError);
         return;
       }
 
-      const previousRoomId =
-        typeof socket.data.roomId === "string" ? socket.data.roomId : null;
-
-      if (previousRoomId && previousRoomId !== roomId) {
-        socket.leave(previousRoomId);
-      }
-
-      socket.data.roomId = roomId;
-      socket.join(roomId);
-      socket.emit("joined_room", roomId);
-      console.log(socket.id + " joined room: " + roomId);
-
       try {
-        const messages = await getRoomMessages(roomId);
-        socket.emit(
-          "room_history",
-          messages.map((message) => toChatMessage(message))
-        );
+        await createOrGetGuestUser(userName);
+        const room = await createRoom(roomName);
+        socket.emit("room_created", toRoomPayload(room));
+        await joinSocketToRoom(socket, room);
       } catch (error) {
-        console.error("failed to load room history:", error);
-        socket.emit("error_message", "Failed to load room history.");
+        console.error("failed to create room:", error);
+        socket.emit("error_message", "Failed to create room.");
+      }
+    });
+
+    socket.on("join_room", async (payload: unknown) => {
+      try {
+        const room = await resolveRoomFromJoinPayload(payload);
+
+        if (!room) {
+          socket.emit("error_message", "Room not found or invite token is invalid.");
+          return;
+        }
+
+        await joinSocketToRoom(socket, room);
+      } catch (error) {
+        console.error("failed to join room:", error);
+        socket.emit("error_message", "Failed to join room.");
       }
     });
 
@@ -267,55 +431,63 @@ export function registerSocketHandlers(io: Server) {
         clientMessageId
       } = validation.value;
 
-      emitMessageStatus(socket, clientMessageId, "translating");
+      if (socket.data.roomId !== roomId) {
+        socket.emit("error_message", "Join the room before sending a message.");
+        emitMessageStatus(socket, clientMessageId, "error");
+        return;
+      }
 
-      const translation = await translateMessage(originalText, {
-        sourceLang,
-        targetLang
-      });
+      const rateLimit = checkMessageRateLimit(socket.id, roomId);
+      if (!rateLimit.allowed) {
+        const retryAfterSeconds = Math.ceil(rateLimit.retryAfterMs / 1000);
+        const message =
+          "You are sending messages too quickly. Try again in " +
+          retryAfterSeconds +
+          " seconds.";
+        socket.emit("error_message", message);
+        emitMessageStatus(socket, clientMessageId, "error", message);
+        return;
+      }
 
       try {
+        const room = await getRoomById(roomId);
+        if (!room) {
+          socket.emit("error_message", "Room no longer exists.");
+          emitMessageStatus(socket, clientMessageId, "error");
+          return;
+        }
+
+        const user = await createOrGetGuestUser(userName);
         const savedMessage = await saveMessage({
           roomId,
-          userName,
+          userId: user.id,
+          userName: user.displayName,
           originalText,
-          translatedText: translation.translatedText,
-          sourceLang: translation.sourceLang,
-          targetLang: translation.targetLang,
-          translationMs: translation.translationMs
+          translatedText: null,
+          sourceLang: sourceLang === "auto" ? null : sourceLang,
+          targetLang,
+          translationMs: null,
+          translationStatus: "pending",
+          translationError: null
         });
 
-        const message: ChatMessage = {
-          ...toChatMessage(savedMessage, clientMessageId),
-          cacheHit: translation.cacheHit
-        };
+        const message = toChatMessage(savedMessage, clientMessageId);
 
         io.to(message.roomId).emit("receive_message", message);
-        emitMessageStatus(socket, clientMessageId, "saved");
+        emitMessageStatus(socket, clientMessageId, "translating");
+
+        void translateAndBroadcast(
+          io,
+          roomId,
+          savedMessage.id,
+          originalText,
+          sourceLang,
+          targetLang
+        );
       } catch (error) {
         console.error("failed to save message:", error);
-
-        const fallbackMessage: ChatMessage = {
-          id: randomUUID(),
-          roomId,
-          userName,
-          originalText,
-          translatedText: translation.translatedText,
-          sourceLang: translation.sourceLang,
-          targetLang: translation.targetLang,
-          translationMs: translation.translationMs,
-          cacheHit: translation.cacheHit,
-          clientMessageId,
-          createdAt: new Date().toISOString()
-        };
-
-        io.to(roomId).emit("receive_message", fallbackMessage);
-        emitMessageStatus(
-          socket,
-          clientMessageId,
-          "error",
-          "Message was sent but could not be saved."
-        );
+        socket.emit("error_message", "Message could not be sent.");
+        emitMessageStatus(socket, clientMessageId, "error");
       }
     });
 

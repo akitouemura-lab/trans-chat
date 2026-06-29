@@ -39,8 +39,14 @@ export function MessageBubble({
   onSavePhrase
 }: MessageBubbleProps) {
   const canSavePhrase =
-    !isPendingMessage(message) && typeof message.translatedText === "string";
+    !isPendingMessage(message) &&
+    message.translationStatus === "completed" &&
+    typeof message.translatedText === "string";
   const phraseSaved = canSavePhrase && isPhraseSaved(message);
+  const isTranslationPending =
+    !isPendingMessage(message) && message.translationStatus === "pending";
+  const isTranslationFailed =
+    !isPendingMessage(message) && message.translationStatus === "failed";
 
   return (
     <div className={isMine ? "flex justify-end" : "flex justify-start"}>
@@ -82,6 +88,18 @@ export function MessageBubble({
                       : "Error"}
                 </span>
               )}
+
+              {isTranslationPending && (
+                <span className="rounded-full bg-yellow-500/20 px-2 py-1 font-semibold text-yellow-200">
+                  Translating...
+                </span>
+              )}
+
+              {isTranslationFailed && (
+                <span className="rounded-full bg-red-500/20 px-2 py-1 font-semibold text-red-200">
+                  Translation failed
+                </span>
+              )}
             </div>
 
             {message.translationMs !== null && (
@@ -94,7 +112,12 @@ export function MessageBubble({
               ? message.status === "error"
                 ? "Could not save the message."
                 : "Translating..."
-              : message.translatedText ?? "Translation unavailable."}
+              : isTranslationPending
+                ? "Original message was sent. Translation is still running..."
+                : isTranslationFailed
+                  ? message.translationError ??
+                    "Original message was sent, but translation is unavailable."
+                  : message.translatedText ?? "Translation unavailable."}
           </p>
 
           {canSavePhrase && (

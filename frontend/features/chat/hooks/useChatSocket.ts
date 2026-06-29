@@ -3,12 +3,14 @@ import { io, type Socket } from "socket.io-client";
 import type {
   ChatMessage,
   DisplayMessage,
+  JoinedRoom,
   MessageStatusPayload,
   PendingChatMessage,
   TranslationDirection
 } from "../lib/types";
 import {
   validateMessage,
+  validateInviteToken,
   validateRoomId,
   validateUserName
 } from "../lib/validation";
@@ -31,14 +33,16 @@ function createClientMessageId(): string {
 
 type UseChatSocketParams = {
   activeRoomId: string;
+  activeInviteToken: string;
   userName: string;
   translationDirection: TranslationDirection;
-  onRoomChange: (roomId: string) => void;
+  onRoomChange: (room: JoinedRoom) => void;
   onTranslatedMessages?: (messages: DisplayMessage[]) => void;
 };
 
 export function useChatSocket({
   activeRoomId,
+  activeInviteToken,
   userName,
   translationDirection,
   onRoomChange,
@@ -46,6 +50,8 @@ export function useChatSocket({
 }: UseChatSocketParams) {
   const socketRef = useRef<Socket | null>(null);
   const activeRoomRef = useRef(activeRoomId);
+  const activeInviteTokenRef = useRef(activeInviteToken);
+  const onRoomChangeRef = useRef(onRoomChange);
   const onTranslatedMessagesRef = useRef(onTranslatedMessages);
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -60,6 +66,14 @@ export function useChatSocket({
   }, [activeRoomId]);
 
   useEffect(() => {
+    activeInviteTokenRef.current = activeInviteToken;
+  }, [activeInviteToken]);
+
+  useEffect(() => {
+    onRoomChangeRef.current = onRoomChange;
+  }, [onRoomChange]);
+
+  useEffect(() => {
     onTranslatedMessagesRef.current = onTranslatedMessages;
   }, [onTranslatedMessages]);
 
@@ -72,9 +86,19 @@ export function useChatSocket({
 
     socket.on("connect", () => {
       setIsConnected(true);
-      setStatusMessage("Connected to chat server.");
-      setIsLoadingHistory(true);
-      socket.emit("join_room", activeRoomRef.current);
+      setStatusMessage("Connected. Create a room or join with an invite.");
+
+      if (activeInviteTokenRef.current) {
+        setIsLoadingHistory(true);
+        socket.emit("join_room", {
+          inviteToken: activeInviteTokenRef.current
+        });
+      } else if (activeRoomRef.current) {
+        setIsLoadingHistory(true);
+        socket.emit("join_room", {
+          roomId: activeRoomRef.current
+        });
+      }
     });
 
     socket.on("disconnect", () => {
@@ -82,8 +106,15 @@ export function useChatSocket({
       setStatusMessage("Disconnected from chat server.");
     });
 
-    socket.on("joined_room", (joinedRoomId: string) => {
-      setStatusMessage("Joined room: " + joinedRoomId);
+    socket.on("room_created", (room: JoinedRoom) => {
+      setStatusMessage("Created room: " + room.roomId);
+    });
+
+    socket.on("joined_room", (room: JoinedRoom) => {
+      activeRoomRef.current = room.roomId;
+      activeInviteTokenRef.current = room.inviteToken;
+      onRoomChangeRef.current(room);
+      setStatusMessage("Joined room: " + room.roomId);
     });
 
     socket.on("room_history", (history: ChatMessage[]) => {
@@ -120,6 +151,20 @@ export function useChatSocket({
       });
 
       setIsSending(false);
+      onTranslatedMessagesRef.current?.([message]);
+    });
+
+    socket.on("message_updated", (message: ChatMessage) => {
+      setMessages((currentMessages) => {
+        if (message.roomId !== activeRoomRef.current) {
+          return currentMessages;
+        }
+
+        return currentMessages.map((current) =>
+          current.id === message.id ? message : current
+        );
+      });
+
       onTranslatedMessagesRef.current?.([message]);
     });
 
@@ -173,36 +218,51 @@ export function useChatSocket({
   }, []);
 
   const joinRoom = useCallback(
-    (targetRoomId: string) => {
+    (targetRoomIdOrInvite: string) => {
       if (!socketRef.current) return;
 
-      const trimmedRoomId = targetRoomId.trim();
-      const roomError = validateRoomId(trimmedRoomId);
+      const trimmedValue = targetRoomIdOrInvite.trim();
+      const roomError = validateRoomId(trimmedValue);
+      const inviteError = validateInviteToken(trimmedValue);
 
-      if (roomError) {
-        setStatusMessage(roomError);
+      if (roomError && inviteError) {
+        setStatusMessage("Enter a valid room ID or invite token.");
         return;
       }
 
-      activeRoomRef.current = trimmedRoomId;
-      onRoomChange(trimmedRoomId);
+      activeRoomRef.current = "";
       setMessages([]);
       setIsLoadingHistory(true);
-      socketRef.current.emit("join_room", trimmedRoomId);
+      socketRef.current.emit("join_room", {
+        roomIdOrInvite: trimmedValue
+      });
     },
-    [onRoomChange]
+    []
   );
 
   const createRoom = useCallback(() => {
-    const newRoomId = "room-" + Math.random().toString(36).slice(2, 8);
-    joinRoom(newRoomId);
-  }, [joinRoom]);
+    if (!socketRef.current) return;
+
+    const trimmedUserName = userName.trim();
+    const userNameError = validateUserName(trimmedUserName);
+
+    if (userNameError) {
+      setStatusMessage(userNameError);
+      return;
+    }
+
+    setMessages([]);
+    setIsLoadingHistory(true);
+    socketRef.current.emit("create_room", {
+      userName: trimmedUserName
+    });
+  }, [userName]);
 
   const deleteHistory = useCallback(async () => {
-    const roomError = validateRoomId(activeRoomId);
+    const roomError = activeRoomId ? validateRoomId(activeRoomId) : "Room ID is required.";
 
     if (roomError) {
-      setStatusMessage(roomError);
+      setStatusMessage("Create or join a room before deleting history.");
       return;
     }
 
@@ -259,8 +319,8 @@ export function useChatSocket({
       const trimmedText = messageText.trim();
 
       const roomError = validateRoomId(activeRoomId);
-      if (roomError) {
-        setStatusMessage(roomError);
+      if (!activeRoomId || roomError) {
+        setStatusMessage("Create or join a room before sending a message.");
         return false;
       }
 
@@ -288,7 +348,10 @@ export function useChatSocket({
         sourceLang: null,
         targetLang: null,
         translationMs: null,
+        translationStatus: "pending",
+        translationError: null,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         isPending: true,
         status: "sending"
       };

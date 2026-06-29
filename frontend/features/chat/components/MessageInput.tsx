@@ -23,6 +23,8 @@ export function MessageInput({
   onTextChange,
   onSendMessage
 }: MessageInputProps) {
+  const hasActiveRoom = activeRoomId.trim().length > 0;
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -44,7 +46,11 @@ export function MessageInput({
       <div className="mx-auto flex max-w-6xl flex-col gap-3 md:flex-row">
         <input
           className={"flex-1 rounded-xl border px-4 py-3 outline-none " + inputClass}
-          placeholder="Type a message..."
+          placeholder={
+            hasActiveRoom
+              ? "Type a message..."
+              : "Create or join a room before sending."
+          }
           value={text}
           maxLength={1000}
           onChange={(event) => onTextChange(event.target.value)}
@@ -52,7 +58,9 @@ export function MessageInput({
 
         <button
           type="submit"
-          disabled={!isConnected || isSending || text.trim().length === 0}
+          disabled={
+            !isConnected || !hasActiveRoom || isSending || text.trim().length === 0
+          }
           className="rounded-xl bg-blue-500 px-6 py-3 font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-500"
         >
           {isSending ? "Sending..." : "Send"}
@@ -61,7 +69,7 @@ export function MessageInput({
 
       <div className={"mt-2 flex justify-between text-xs " + mutedTextClass}>
         <span>{text.length}/1000 characters</span>
-        <span>Current room: {activeRoomId}</span>
+        <span>Current room: {hasActiveRoom ? activeRoomId : "No active room"}</span>
       </div>
     </form>
   );

@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:17
     container_name: trans-chat-postgres
+    # Development-only credentials. Change them before any production use.
     environment:
       POSTGRES_USER: transchat
       POSTGRES_PASSWORD: transchat_password
@@ -32,7 +33,11 @@ services:
       LAN_HOST: ${LAN_HOST:-}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
       TRANSLATE_SERVICE_URL: http://translate-service:5000
-      TRANSLATE_TIMEOUT_MS: 5000
+      TRANSLATE_TIMEOUT_MS: 15000
+      MESSAGE_RATE_LIMIT_WINDOW_MS: 10000
+      MESSAGE_RATE_LIMIT_MAX: 5
+      ROOM_RATE_LIMIT_WINDOW_MS: 10000
+      ROOM_RATE_LIMIT_MAX: 30
       DATABASE_URL: postgresql://transchat:transchat_password@postgres:5432/transchat?schema=public
       ENABLE_ADMIN_ACTIONS: "false"
     ports:

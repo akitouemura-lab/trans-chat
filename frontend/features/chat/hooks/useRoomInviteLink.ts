@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 
-function createInviteLink(roomId: string): string {
+function createInviteLink(inviteToken: string): string {
   if (typeof window === "undefined") return "";
+  if (!inviteToken) return "";
 
   const url = new URL(window.location.href);
-  url.searchParams.set("room", roomId);
+  url.searchParams.delete("room");
+  url.searchParams.set("invite", inviteToken);
   url.hash = "";
 
   return url.toString();
@@ -27,21 +29,24 @@ function copyTextWithFallback(text: string): boolean {
   return copied;
 }
 
-export function useRoomInviteLink(activeRoomId: string) {
+export function useRoomInviteLink(activeInviteToken: string) {
   const [copyState, setCopyState] = useState<{
-    roomId: string;
+    inviteToken: string;
     message: string;
   } | null>(null);
-  const inviteLink = useMemo(() => createInviteLink(activeRoomId), [activeRoomId]);
+  const inviteLink = useMemo(
+    () => createInviteLink(activeInviteToken),
+    [activeInviteToken]
+  );
   const inviteStatusMessage =
-    copyState?.roomId === activeRoomId ? copyState.message : "";
+    copyState?.inviteToken === activeInviteToken ? copyState.message : "";
 
   const copyInviteLink = useCallback(async () => {
-    const nextInviteLink = createInviteLink(activeRoomId);
+    const nextInviteLink = createInviteLink(activeInviteToken);
 
     if (!nextInviteLink) {
       setCopyState({
-        roomId: activeRoomId,
+        inviteToken: activeInviteToken,
         message: "Invite link is not available."
       });
       return;
@@ -55,16 +60,16 @@ export function useRoomInviteLink(activeRoomId: string) {
       }
 
       setCopyState({
-        roomId: activeRoomId,
+        inviteToken: activeInviteToken,
         message: "Invite link copied."
       });
     } catch {
       setCopyState({
-        roomId: activeRoomId,
+        inviteToken: activeInviteToken,
         message: "Could not copy invite link."
       });
     }
-  }, [activeRoomId]);
+  }, [activeInviteToken]);
 
   return {
     inviteLink,
