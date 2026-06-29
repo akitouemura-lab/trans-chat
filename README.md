@@ -4,15 +4,60 @@ TransChat is a real-time English/Japanese translation chat application built to 
 
 It combines a Next.js frontend, a Node.js/Express/Socket.IO chat server, a FastAPI translation service, Argos Translate, PostgreSQL, Prisma, Docker Compose, and GitHub Actions CI into one small but complete full-stack system.
 
+<a id="readme-navigation"></a>
+
+## Table of Contents
+
+- [Project Title](#transchat)
+- [Project Overview](#project-overview)
+- [Demo Video](#demo-video)
+- [Overview](#overview)
+- [Core Concept](#core-concept)
+- [Features](#features)
+  - [Real-time Chat](#real-time-chat)
+  - [English/Japanese Translation](#englishjapanese-translation)
+  - [Persistent Message History](#persistent-message-history)
+  - [Async Translation UX](#async-translation-ux)
+  - [UI and Local Persistence](#ui-and-local-persistence)
+  - [Operations and Safety](#operations-and-safety)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+  - [Service Responsibilities](#service-responsibilities)
+- [Message Flow](#message-flow)
+- [Project Structure](#project-structure)
+- [Setup](#setup)
+  - [Docker Compose Startup](#docker-compose-startup)
+  - [Local Development Startup](#local-development-startup)
+- [Access from Another Device on the Same LAN](#access-from-another-device-on-the-same-lan)
+- [Environment Variables](#environment-variables)
+- [Security Notes](#security-notes)
+- [Usage](#usage)
+- [API Examples](#api-examples)
+- [Socket.IO Events](#socketio-events)
+- [Development Commands](#development-commands)
+- [CI](#ci)
+- [Design Notes](#design-notes)
+- [Completed](#completed)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Portfolio Highlights](#portfolio-highlights)
+- [License](#license)
+- [Author](#author)
+- [Summary](#summary)
+
 ## Project Overview
 
 TransChat is a portfolio-focused full-stack project that demonstrates realtime communication, local translation model integration, persistent chat history, service boundaries, Docker-based local infrastructure, and production-minded reliability improvements.
 
 The application lets users create or join chat rooms, send messages, translate between English and Japanese, view original and translated text together, and reload recent room history from PostgreSQL. It is designed to be understandable as a practical architecture sample rather than a toy single-file demo.
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Demo Video
 
 [Watch the demo video](docs/videos/demo.mp4)
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Overview
 
@@ -30,11 +75,15 @@ This project was built to solve a concrete communication problem while also show
 - containerized service orchestration
 - CI-based project verification
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Core Concept
 
 > Make cross-language communication feel immediate, natural, and technically elegant.
 
 TransChat focuses on keeping the user experience simple while making the internal architecture explicit. The frontend is responsible for interaction and optimistic UI, the chat server owns realtime coordination and persistence, the translation service owns language translation, and PostgreSQL stores durable message history.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Features
 
@@ -98,6 +147,8 @@ TransChat focuses on keeping the user experience simple while making the interna
 - Generic FastAPI error responses that do not expose raw internal exceptions
 - Destructive room-history deletion disabled by default unless admin actions are explicitly enabled
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Tech Stack
 
 | Area | Technology |
@@ -112,6 +163,8 @@ TransChat focuses on keeping the user experience simple while making the interna
 | Package manager | pnpm |
 | Local infrastructure | Docker Compose |
 | CI | GitHub Actions |
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Architecture
 
@@ -139,6 +192,8 @@ flowchart LR
 | `translate-service/` | Validates translation requests, checks model readiness, and translates English/Japanese text with Argos Translate |
 | PostgreSQL | Stores rooms, invite tokens, guest users, message history, and translation metadata |
 | Docker Compose | Runs the full local service graph |
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Message Flow
 
@@ -170,6 +225,8 @@ sequenceDiagram
 ```
 
 If translation times out, the translation service is unreachable, the response is invalid, or a required local model is missing, the original message remains visible and the chat server updates the message as `translationStatus=failed`.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Project Structure
 
@@ -236,6 +293,8 @@ trans-chat/
 |-- stop-dev.ps1
 `-- README.md
 ```
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Setup
 
@@ -325,6 +384,8 @@ powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
 
 The helper scripts derive the project root from the script location, so they do not depend on a hard-coded checkout path. Local development requires the Argos setup script above before translation can succeed; otherwise `/health` reports missing models and translation requests return HTTP 503.
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Access from Another Device on the Same LAN
 
 `localhost` always points to the device that is opening the page. If you open `http://localhost:3000` on a phone, the phone looks for a server running on the phone itself, not on the development PC.
@@ -401,6 +462,8 @@ The chat server allows CORS from `localhost`, `127.0.0.1`, and `http://<LAN_HOST
 - Ports `5000` and `5432` are bound to `127.0.0.1` in Docker Compose because browsers on other devices do not need direct access to the translation service or database.
 - Use this only on a trusted local network. Do not expose this development setup directly to the internet.
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Environment Variables
 
 ### Root `.env.example`
@@ -468,6 +531,8 @@ NEXT_PUBLIC_CHAT_SERVER_URL=http://localhost:4000
 
 This value tells the browser where the Socket.IO chat server is running. When testing from another device, it must use the development PC's LAN IP address instead of `localhost`.
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Security Notes
 
 - This is a local-first portfolio prototype, not a production chat service.
@@ -476,6 +541,8 @@ This value tells the browser where the Socket.IO chat server is running. When te
 - Use deployment secrets or a secret manager for production configuration.
 - The current Room/User model is a privacy foundation, but it is not a full authentication or authorization system yet.
 - In-memory rate limiting protects local demos but should be replaced with Redis-backed limiting for multi-instance production deployments.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Usage
 
@@ -495,6 +562,8 @@ This value tells the browser where the Socket.IO chat server is running. When te
 Room history is loaded automatically after joining a room. The chat server returns the latest 100 messages in chronological display order.
 
 Translation history and saved phrases are stored in the browser with `localStorage`. They are useful for personal reuse during demos, but they are not synchronized between devices.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## API Examples
 
@@ -582,6 +651,8 @@ ENABLE_ADMIN_ACTIONS=true
 ```
 
 When enabled, the endpoint keeps the existing room ID validation and deletes messages for the requested room.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Socket.IO Events
 
@@ -704,6 +775,8 @@ Possible statuses:
 - `saved`
 - `error`
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Development Commands
 
 ### Frontend
@@ -740,6 +813,8 @@ python -m unittest discover -s tests
 docker compose config
 ```
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## CI
 
 GitHub Actions runs on `push` and `pull_request`.
@@ -761,6 +836,8 @@ The workflow validates each subproject independently:
   - `python -m unittest discover -s tests`
 
 The CI workflow does not require PostgreSQL or the translation runtime to be running, which keeps it lightweight and suitable for pull requests.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Design Notes
 
@@ -823,6 +900,8 @@ The system validates input at multiple boundaries:
 
 Room-history deletion is intentionally disabled by default. This avoids exposing a destructive endpoint in normal local/demo runs and documents the difference between regular user behavior and admin actions.
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Completed
 
 - Server-created rooms with secure UUID room IDs and invite tokens
@@ -837,6 +916,8 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 - Automatic scroll-to-bottom for new messages
 - Local translation history and saved phrases in browser storage
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Known Limitations
 
 - Authentication and user authorization are not implemented yet.
@@ -849,6 +930,8 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 - The local PostgreSQL credentials in `.env.example` and `docker-compose.yml` are development credentials, not production credentials.
 - Room deletion is a coarse admin operation, not a full permission model.
 - Docker image builds can take time because Argos packages are installed during build.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Roadmap
 
@@ -863,6 +946,8 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 - Add support for more languages
 - Add production deployment hardening
 - Add more automated tests around pure validation and message handling logic
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Portfolio Highlights
 
@@ -882,11 +967,15 @@ TransChat demonstrates:
 - maintainable frontend refactoring with components, hooks, and shared libraries
 - practical documentation for setup, architecture, usage, APIs, and limitations
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## License
 
 This project is currently intended for learning and portfolio purposes.
 
 No formal open-source license has been added yet. If this project is reused, distributed, or published as an open-source project, an appropriate license such as the MIT License should be added.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
 ## Author
 
@@ -896,8 +985,12 @@ GitHub: [akitouemura-lab](https://github.com/akitouemura-lab)
 
 Repository: [trans-chat](https://github.com/akitouemura-lab/trans-chat)
 
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
+
 ## Summary
 
 TransChat shows how realtime messaging, local translation, PostgreSQL persistence, Docker Compose, and CI can be combined into a practical full-stack application.
 
 The project is intentionally small enough to understand, but complete enough to demonstrate real engineering concerns: service boundaries, validation, optimistic UI, safe fallbacks, destructive-action guards, and maintainable frontend structure.
+
+<p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
