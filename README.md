@@ -1,3 +1,5 @@
+
+
 # TransChat
 
 TransChat is a real-time English/Japanese translation chat application built to make bilingual conversation feel immediate, natural, and technically elegant.
@@ -12,7 +14,9 @@ JP.ver
 
 https://github.com/user-attachments/assets/c3eb23b1-7542-4cf8-bd6c-d5a7d98b5c5a
 
-EN.ver
+
+
+
 
 
 
