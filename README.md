@@ -4,6 +4,20 @@ TransChat is a real-time English/Japanese translation chat application built to 
 
 It combines a Next.js frontend, a Node.js/Express/Socket.IO chat server, a FastAPI translation service, Argos Translate, PostgreSQL, Prisma, Docker Compose, and GitHub Actions CI into one small but complete full-stack system.
 
+
+JP
+https://github.com/user-attachments/assets/482f79f0-6f85-431f-98a4-01c6d492b4a5
+EN
+
+
+
+
+
+
+
+
+
+
 <a id="readme-navigation"></a>
 
 ## Table of Contents
