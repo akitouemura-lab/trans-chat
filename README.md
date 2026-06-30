@@ -6,8 +6,11 @@ It combines a Next.js frontend, a Node.js/Express/Socket.IO chat server, a FastA
 
 
 JP
-https://github.com/user-attachments/assets/482f79f0-6f85-431f-98a4-01c6d492b4a5
-EN
+
+
+https://github.com/user-attachments/assets/f2ccce33-1000-4fbe-904f-872573aa1155
+
+
 
 
 
