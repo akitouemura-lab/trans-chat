@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "description": "Representative English/Japanese chat inputs for routing checks and human translation review. This dataset intentionally does not define one perfect translation.",
+  "cases": [
+    {
+      "id": "everyday-en-01",
+      "category": "everyday",
+      "text": "How was your day?",
+      "source_lang": "auto",
+      "expected_source_lang": "en",
+      "target_lang": "ja"
+    },
+    {
+      "id": "everyday-ja-01",
+      "category": "everyday",
+      "text": "今日はどうだった？",
+      "source_lang": "auto",
+      "expected_source_lang": "ja",
+      "target_lang": "en"
+    },
+    {
+      "id": "polite-en-01",
+      "category": "polite",
+      "text": "Could you please help me?",
+      "source_lang": "auto",
+      "expected_source_lang": "en",
+      "target_lang": "ja"
+    },
+    {
+      "id": "polite-ja-01",
+      "category": "polite",
+      "text": "ありがとうございます。",
+      "source_lang": "auto",
+      "expected_source_lang": "ja",
+      "target_lang": "en"
+    },
+    {
+      "id": "short-en-01",
+      "category": "short",
+      "text": "Sounds good!",
+      "source_lang": "auto",
+      "expected_source_lang": "en",
+      "target_lang": "ja"
+    },
+    {
+      "id": "short-ja-01",
+      "category": "short",
+      "text": "了解です。",
+      "source_lang": "auto",
+      "expected_source_lang": "ja",
+      "target_lang": "en"
+    },
+    {
+      "id": "names-en-01",
+      "category": "names",
+      "text": "Hi, Yuki!",
+      "source_lang": "auto",
+      "expected_source_lang": "en",
+      "target_lang": "ja"
+    },
+    {
+      "id": "names-ja-01",
+      "category": "names",
+      "text": "田中さんは来ますか？",
+      "source_lang": "auto",
+      "expected_source_lang": "ja",
+      "target_lang": "en"
+    },
+    {
+      "id": "times-en-01",
+      "category": "times",
+      "text": "Let's meet at 3:30 PM.",
+      "source_lang": "auto",
+      "expected_source_lang": "en",
+      "target_lang": "ja"
+    },
+    {
+      "id": "times-ja-01",
+      "category": "times",
+      "text": "会議は10時からです。",
+      "source_lang": "auto",
+      "expected_source_lang": "ja",
+      "target_lang": "en"
+    },
+    {
+      "id": "mixed-en-01",
+      "category": "mixed",
+      "text": "The meeting is in 会議室B.",
+      "source_lang": "auto",
+      "expected_source_lang": "en",
+      "target_lang": "ja"
+    },
+    {
+      "id": "mixed-ja-01",
+      "category": "mixed",
+      "text": "Wi-Fiは使えますか？",
+      "source_lang": "auto",
+      "expected_source_lang": "ja",
+      "target_lang": "en"
+    }
+  ]
+}

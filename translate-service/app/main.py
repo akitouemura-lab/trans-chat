@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from app.schemas import TranslateRequest, TranslateResponse
 from app.translator import (
+    DEFAULT_TRANSLATION_PROVIDER,
     MissingLanguageModelError,
     are_required_packages_installed,
     get_missing_pairs,
@@ -25,6 +26,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok" if models_ready else "degraded",
         "service": "translate-service",
+        "provider": DEFAULT_TRANSLATION_PROVIDER.name,
         "modelsReady": models_ready,
         "missingPairs": [
             {"source": source, "target": target} for source, target in missing_pairs
@@ -41,17 +43,18 @@ def translate(request: TranslateRequest) -> TranslateResponse:
         )
 
     try:
-        translated_text, translation_ms, actual_source_lang = translate_text(
+        result = translate_text(
             request.text,
             request.source_lang,
             request.target_lang,
         )
 
         return TranslateResponse(
-            translated_text=translated_text,
-            source_lang=actual_source_lang,
+            translated_text=result.translated_text,
+            source_lang=result.source_lang,
             target_lang=request.target_lang,
-            translation_ms=translation_ms,
+            translation_ms=result.translation_ms,
+            provider=result.provider,
         )
 
     except MissingLanguageModelError as error:

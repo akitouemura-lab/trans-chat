@@ -6,6 +6,7 @@ type TranslateResponse = {
   source_lang: string;
   target_lang: TargetLang;
   translation_ms: number;
+  provider: string;
 };
 
 type TranslateOptions = {
@@ -120,7 +121,9 @@ function isTranslateResponse(value: unknown): value is TranslateResponse {
     typeof data.source_lang === "string" &&
     isTargetLang(data.target_lang) &&
     typeof data.translation_ms === "number" &&
-    Number.isFinite(data.translation_ms)
+    Number.isFinite(data.translation_ms) &&
+    typeof data.provider === "string" &&
+    data.provider.length > 0
   );
 }
 

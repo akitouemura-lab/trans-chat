@@ -133,6 +133,8 @@ TransChat focuses on keeping the user experience simple while making the interna
 - Auto translation direction based on lightweight Japanese/English character counting
 - Manual translation direction selection
 - Local translation with Argos Translate
+- Provider-backed translation boundary with Argos as the default
+- Curated English/Japanese chat evaluation dataset for repeatable review
 - Translation latency shown per message when available
 - In-memory translation cache in the chat server to avoid repeated translation work for the same normalized text and language direction
 - Clear translation failure states for timeout, unavailable service, invalid response, and missing model cases
@@ -626,6 +628,7 @@ Example response:
 {
   "status": "ok",
   "service": "translate-service",
+  "provider": "argos",
   "modelsReady": true,
   "missingPairs": []
 }
@@ -848,7 +851,13 @@ cd translate-service
 python scripts/install_argos_models.py
 python -m compileall app scripts tests
 python -m unittest discover -s tests
+python scripts/evaluate_translations.py
 ```
+
+The automated tests use a lightweight fake provider and do not download Argos
+models. `evaluate_translations.py` requires the local models and prints the
+dataset inputs, current Argos outputs, and any per-case runtime errors for
+human comparison.
 
 ### Docker Compose Validation
 
@@ -905,6 +914,11 @@ This keeps `frontend/app/page.tsx` small and makes the chat feature easier to ex
 Argos Translate keeps the project usable without paid translation APIs. This is useful for portfolio review because the app can demonstrate translation behavior without requiring external API keys.
 
 Required Argos packages are installed by `translate-service/scripts/install_argos_models.py`. Docker builds run this setup step during image build, and FastAPI startup only checks model readiness.
+
+The service uses a small provider interface with Argos as the default. The
+evaluation dataset covers everyday chat, polite expressions, short messages,
+names, times, and mixed English/Japanese text. CI verifies routing and service
+contracts without defining one exact translation as universally correct.
 
 ### Translation Timeout and Safe Fallback
 
@@ -970,6 +984,7 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 - Rate limiting is in-memory, so it resets on server restart and is not shared across multiple server instances.
 - The current language focus is English and Japanese.
 - Argos Translate quality can vary, especially for short phrases, informal chat text, and ambiguous wording.
+- The evaluation dataset makes regressions easier to review, but semantic translation quality still requires human evaluation with installed models.
 - Local development requires Argos model installation before translation is fully ready.
 - Translation history and saved phrases are local to the current browser because authentication and user accounts are not implemented yet.
 - The local PostgreSQL credentials in `.env.example` and `docker-compose.yml` are development credentials, not production credentials.

@@ -14,3 +14,4 @@ class TranslateResponse(BaseModel):
     source_lang: str
     target_lang: str
     translation_ms: int
+    provider: str
