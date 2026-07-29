@@ -54,6 +54,24 @@ type JoinedRoomPayload = {
   inviteToken: string;
 };
 
+type RoomJoinResult = {
+  room: JoinedRoomPayload;
+  messages: ChatMessage[];
+};
+
+type RoomActionAcknowledgement = (
+  response:
+    | {
+        ok: true;
+        room: JoinedRoomPayload;
+        messages: ChatMessage[];
+      }
+    | {
+        ok: false;
+        error: string;
+      }
+) => void;
+
 type ValidationResult =
   | {
       ok: true;
@@ -66,6 +84,22 @@ type ValidationResult =
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function acknowledgeRoomFailure(
+  socket: Socket,
+  acknowledge: RoomActionAcknowledgement | undefined,
+  error: string
+): void {
+  if (typeof acknowledge === "function") {
+    acknowledge({
+      ok: false,
+      error
+    });
+    return;
+  }
+
+  socket.emit("error_message", error);
 }
 
 function isSourceLang(value: unknown): value is SourceLang {
@@ -307,24 +341,37 @@ async function resolveRoomFromJoinPayload(
   return null;
 }
 
-async function joinSocketToRoom(socket: Socket, room: RoomSummary) {
+async function joinSocketToRoom(
+  socket: Socket,
+  room: RoomSummary
+): Promise<RoomJoinResult> {
+  const roomPayload = toRoomPayload(room);
+  const messages = await getRoomMessages(room.id);
+  const history = messages.map((message) => toChatMessage(message));
   const previousRoomId =
     typeof socket.data.roomId === "string" ? socket.data.roomId : null;
 
+  await socket.join(room.id);
+
   if (previousRoomId && previousRoomId !== room.id) {
-    socket.leave(previousRoomId);
+    try {
+      await socket.leave(previousRoomId);
+    } catch (error) {
+      await socket.leave(room.id);
+      throw error;
+    }
   }
 
   socket.data.roomId = room.id;
-  socket.join(room.id);
-  socket.emit("joined_room", toRoomPayload(room));
+  socket.emit("joined_room", roomPayload);
   console.log(socket.id + " joined room: " + room.id);
 
-  const messages = await getRoomMessages(room.id);
-  socket.emit(
-    "room_history",
-    messages.map((message) => toChatMessage(message))
-  );
+  socket.emit("room_history", history);
+
+  return {
+    room: roomPayload,
+    messages: history
+  };
 }
 
 async function translateAndBroadcast(
@@ -371,48 +418,79 @@ export function registerSocketHandlers(io: Server) {
   io.on("connection", (socket: Socket) => {
     console.log("connected: " + socket.id);
 
-    socket.on("create_room", async (payload: unknown) => {
-      const roomName =
-        isRecord(payload) && typeof payload.roomName === "string"
-          ? payload.roomName.trim()
-          : undefined;
-      const userName =
-        isRecord(payload) && typeof payload.userName === "string"
-          ? payload.userName.trim()
-          : "";
+    socket.on(
+      "create_room",
+      async (
+        payload: unknown,
+        acknowledge?: RoomActionAcknowledgement
+      ) => {
+        const roomName =
+          isRecord(payload) && typeof payload.roomName === "string"
+            ? payload.roomName.trim()
+            : undefined;
+        const userName =
+          isRecord(payload) && typeof payload.userName === "string"
+            ? payload.userName.trim()
+            : "";
 
-      const userNameError = validateUserName(userName);
-      if (userNameError) {
-        socket.emit("error_message", userNameError);
-        return;
-      }
-
-      try {
-        await createOrGetGuestUser(userName);
-        const room = await createRoom(roomName);
-        socket.emit("room_created", toRoomPayload(room));
-        await joinSocketToRoom(socket, room);
-      } catch (error) {
-        console.error("failed to create room:", error);
-        socket.emit("error_message", "Failed to create room.");
-      }
-    });
-
-    socket.on("join_room", async (payload: unknown) => {
-      try {
-        const room = await resolveRoomFromJoinPayload(payload);
-
-        if (!room) {
-          socket.emit("error_message", "Room not found or invite token is invalid.");
+        const userNameError = validateUserName(userName);
+        if (userNameError) {
+          acknowledgeRoomFailure(socket, acknowledge, userNameError);
           return;
         }
 
-        await joinSocketToRoom(socket, room);
-      } catch (error) {
-        console.error("failed to join room:", error);
-        socket.emit("error_message", "Failed to join room.");
+        try {
+          await createOrGetGuestUser(userName);
+          const room = await createRoom(roomName);
+          const result = await joinSocketToRoom(socket, room);
+
+          socket.emit("room_created", result.room);
+          acknowledge?.({
+            ok: true,
+            room: result.room,
+            messages: result.messages
+          });
+        } catch (error) {
+          console.error("failed to create room:", error);
+          acknowledgeRoomFailure(
+            socket,
+            acknowledge,
+            "Failed to create room."
+          );
+        }
       }
-    });
+    );
+
+    socket.on(
+      "join_room",
+      async (
+        payload: unknown,
+        acknowledge?: RoomActionAcknowledgement
+      ) => {
+        try {
+          const room = await resolveRoomFromJoinPayload(payload);
+
+          if (!room) {
+            acknowledgeRoomFailure(
+              socket,
+              acknowledge,
+              "Room not found or invite token is invalid."
+            );
+            return;
+          }
+
+          const result = await joinSocketToRoom(socket, room);
+          acknowledge?.({
+            ok: true,
+            room: result.room,
+            messages: result.messages
+          });
+        } catch (error) {
+          console.error("failed to join room:", error);
+          acknowledgeRoomFailure(socket, acknowledge, "Failed to join room.");
+        }
+      }
+    );
 
     socket.on("send_message", async (payload: unknown) => {
       const validation = validateMessagePayload(payload);

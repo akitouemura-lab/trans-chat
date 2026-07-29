@@ -6,6 +6,8 @@ import type {
   JoinedRoom,
   MessageStatusPayload,
   PendingChatMessage,
+  RoomAction,
+  RoomActionAcknowledgement,
   TranslationDirection
 } from "../lib/types";
 import {
@@ -17,9 +19,35 @@ import {
 
 const chatServerUrl =
   process.env.NEXT_PUBLIC_CHAT_SERVER_URL ?? "http://localhost:4000";
+const ROOM_ACTION_TIMEOUT_MS = 10000;
+
+type RoomOperation = "create" | "join" | "restore";
 
 function isPendingMessage(message: DisplayMessage): message is PendingChatMessage {
   return "isPending" in message && message.isPending;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isRoomActionAcknowledgement(
+  value: unknown
+): value is RoomActionAcknowledgement {
+  if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+
+  if (!value.ok) {
+    return typeof value.error === "string";
+  }
+
+  if (!isRecord(value.room) || !Array.isArray(value.messages)) return false;
+
+  return (
+    typeof value.room.roomId === "string" &&
+    (typeof value.room.roomName === "string" ||
+      value.room.roomName === null) &&
+    typeof value.room.inviteToken === "string"
+  );
 }
 
 function createClientMessageId(): string {
@@ -53,10 +81,13 @@ export function useChatSocket({
   const activeInviteTokenRef = useRef(activeInviteToken);
   const onRoomChangeRef = useRef(onRoomChange);
   const onTranslatedMessagesRef = useRef(onTranslatedMessages);
+  const roomRequestIdRef = useRef(0);
+  const roomActionRef = useRef<RoomAction | null>(null);
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [roomAction, setRoomAction] = useState<RoomAction | null>(null);
+  const [roomActionError, setRoomActionError] = useState("");
   const [isDeletingHistory, setIsDeletingHistory] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Not connected.");
@@ -77,6 +108,130 @@ export function useChatSocket({
     onTranslatedMessagesRef.current = onTranslatedMessages;
   }, [onTranslatedMessages]);
 
+  const finishRoomAction = useCallback(
+    (
+      response: Extract<RoomActionAcknowledgement, { ok: true }>,
+      operation: RoomOperation
+    ) => {
+      roomActionRef.current = null;
+      activeRoomRef.current = response.room.roomId;
+      activeInviteTokenRef.current = response.room.inviteToken;
+
+      setRoomAction(null);
+      setMessages(response.messages);
+      setIsSending(false);
+
+      if (operation === "restore") {
+        setRoomActionError((currentError) =>
+          currentError
+            ? currentError + " Previous room was restored."
+            : ""
+        );
+      } else {
+        setRoomActionError("");
+      }
+
+      onRoomChangeRef.current(response.room);
+      onTranslatedMessagesRef.current?.(response.messages);
+
+      if (operation === "create") {
+        setStatusMessage("Created room: " + response.room.roomId);
+      } else if (operation === "restore") {
+        setStatusMessage("Rejoined room: " + response.room.roomId);
+      } else {
+        setStatusMessage("Joined room: " + response.room.roomId);
+      }
+    },
+    []
+  );
+
+  const failRoomAction = useCallback((message: string) => {
+    roomActionRef.current = null;
+    setRoomAction(null);
+    setRoomActionError(message);
+    setStatusMessage(message);
+  }, []);
+
+  const requestRoomAction = useCallback(
+    (
+      socket: Socket,
+      eventName: "create_room" | "join_room",
+      payload: Record<string, string>,
+      operation: RoomOperation
+    ) => {
+      const requestId = roomRequestIdRef.current + 1;
+      const nextRoomAction: RoomAction =
+        operation === "create" ? "creating" : "joining";
+
+      roomRequestIdRef.current = requestId;
+      roomActionRef.current = nextRoomAction;
+      setRoomAction(nextRoomAction);
+
+      if (operation !== "restore") {
+        setRoomActionError("");
+      }
+
+      setStatusMessage(
+        operation === "create"
+          ? "Creating room..."
+          : operation === "restore"
+            ? "Restoring previous room..."
+            : "Joining room..."
+      );
+
+      socket.timeout(ROOM_ACTION_TIMEOUT_MS).emit(
+        eventName,
+        payload,
+        (timeoutError: Error | null, response: unknown) => {
+          if (requestId !== roomRequestIdRef.current) return;
+
+          if (timeoutError) {
+            roomRequestIdRef.current += 1;
+            const message =
+              operation === "create"
+                ? "Room creation timed out before the server confirmed it."
+                : operation === "restore"
+                  ? "Restoring the previous room timed out."
+                  : "Room join timed out before the server confirmed it.";
+
+            failRoomAction(message);
+
+            if (operation !== "restore") {
+              if (socket.connected) {
+                socket.disconnect();
+              }
+              socket.connect();
+            }
+            return;
+          }
+
+          if (!isRoomActionAcknowledgement(response)) {
+            roomRequestIdRef.current += 1;
+            failRoomAction("The server returned an invalid room response.");
+
+            if (operation !== "restore") {
+              if (socket.connected) {
+                socket.disconnect();
+              }
+              socket.connect();
+            }
+            return;
+          }
+
+          roomRequestIdRef.current += 1;
+
+          if (!response.ok) {
+            failRoomAction(response.error);
+            return;
+          }
+
+          finishRoomAction(response, operation);
+        }
+      );
+    },
+    [failRoomAction, finishRoomAction]
+  );
+
   useEffect(() => {
     const socket = io(chatServerUrl, {
       autoConnect: false
@@ -86,41 +241,48 @@ export function useChatSocket({
 
     socket.on("connect", () => {
       setIsConnected(true);
-      setStatusMessage("Connected. Create a room or join with an invite.");
 
       if (activeInviteTokenRef.current) {
-        setIsLoadingHistory(true);
-        socket.emit("join_room", {
-          inviteToken: activeInviteTokenRef.current
-        });
+        requestRoomAction(
+          socket,
+          "join_room",
+          {
+            inviteToken: activeInviteTokenRef.current
+          },
+          "restore"
+        );
       } else if (activeRoomRef.current) {
-        setIsLoadingHistory(true);
-        socket.emit("join_room", {
-          roomId: activeRoomRef.current
-        });
+        requestRoomAction(
+          socket,
+          "join_room",
+          {
+            roomId: activeRoomRef.current
+          },
+          "restore"
+        );
+      } else {
+        setStatusMessage("Connected. Create a room or join with an invite.");
       }
     });
 
     socket.on("disconnect", () => {
       setIsConnected(false);
-      setStatusMessage("Disconnected from chat server.");
-    });
+      roomRequestIdRef.current += 1;
 
-    socket.on("room_created", (room: JoinedRoom) => {
-      setStatusMessage("Created room: " + room.roomId);
-    });
+      const interruptedAction = roomActionRef.current;
+      roomActionRef.current = null;
+      setRoomAction(null);
 
-    socket.on("joined_room", (room: JoinedRoom) => {
-      activeRoomRef.current = room.roomId;
-      activeInviteTokenRef.current = room.inviteToken;
-      onRoomChangeRef.current(room);
-      setStatusMessage("Joined room: " + room.roomId);
-    });
-
-    socket.on("room_history", (history: ChatMessage[]) => {
-      setMessages(history);
-      onTranslatedMessagesRef.current?.(history);
-      setIsLoadingHistory(false);
+      if (interruptedAction) {
+        const message =
+          interruptedAction === "creating"
+            ? "Connection lost before room creation was confirmed."
+            : "Connection lost before the room join was confirmed.";
+        setRoomActionError(message);
+        setStatusMessage(message);
+      } else {
+        setStatusMessage("Disconnected from chat server.");
+      }
     });
 
     socket.on("receive_message", (message: ChatMessage) => {
@@ -206,60 +368,94 @@ export function useChatSocket({
     socket.on("error_message", (message: string) => {
       setStatusMessage(message);
       setIsSending(false);
-      setIsLoadingHistory(false);
     });
 
     socket.connect();
 
     return () => {
+      roomRequestIdRef.current += 1;
+      roomActionRef.current = null;
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [requestRoomAction]);
 
   const joinRoom = useCallback(
     (targetRoomIdOrInvite: string) => {
-      if (!socketRef.current) return;
+      const socket = socketRef.current;
+
+      if (!socket || !socket.connected) {
+        const message = "Server is not connected.";
+        setRoomActionError(message);
+        setStatusMessage(message);
+        return;
+      }
+
+      if (roomActionRef.current) return;
 
       const trimmedValue = targetRoomIdOrInvite.trim();
       const roomError = validateRoomId(trimmedValue);
       const inviteError = validateInviteToken(trimmedValue);
 
       if (roomError && inviteError) {
-        setStatusMessage("Enter a valid room ID or invite token.");
+        const message = "Enter a valid room ID or invite token.";
+        setRoomActionError(message);
+        setStatusMessage(message);
         return;
       }
 
-      activeRoomRef.current = "";
-      setMessages([]);
-      setIsLoadingHistory(true);
-      socketRef.current.emit("join_room", {
-        roomIdOrInvite: trimmedValue
-      });
+      requestRoomAction(
+        socket,
+        "join_room",
+        {
+          roomIdOrInvite: trimmedValue
+        },
+        "join"
+      );
     },
-    []
+    [requestRoomAction]
   );
 
   const createRoom = useCallback(() => {
-    if (!socketRef.current) return;
+    const socket = socketRef.current;
+
+    if (!socket || !socket.connected) {
+      const message = "Server is not connected.";
+      setRoomActionError(message);
+      setStatusMessage(message);
+      return;
+    }
+
+    if (roomActionRef.current) return;
 
     const trimmedUserName = userName.trim();
     const userNameError = validateUserName(trimmedUserName);
 
     if (userNameError) {
+      setRoomActionError(userNameError);
       setStatusMessage(userNameError);
       return;
     }
 
-    setMessages([]);
-    setIsLoadingHistory(true);
-    socketRef.current.emit("create_room", {
-      userName: trimmedUserName
-    });
-  }, [userName]);
+    requestRoomAction(
+      socket,
+      "create_room",
+      {
+        userName: trimmedUserName
+      },
+      "create"
+    );
+  }, [requestRoomAction, userName]);
 
   const deleteHistory = useCallback(async () => {
-    const roomError = activeRoomId ? validateRoomId(activeRoomId) : "Room ID is required.";
+    if (roomActionRef.current) {
+      setStatusMessage("Wait for the current room action to finish.");
+      return;
+    }
+
+    const roomError = activeRoomId
+      ? validateRoomId(activeRoomId)
+      : "Room ID is required.";
 
     if (roomError) {
       setStatusMessage("Create or join a room before deleting history.");
@@ -312,6 +508,11 @@ export function useChatSocket({
     (messageText: string): boolean => {
       if (!socketRef.current || !isConnected) {
         setStatusMessage("Server is not connected.");
+        return false;
+      }
+
+      if (roomActionRef.current) {
+        setStatusMessage("Wait for the current room action to finish.");
         return false;
       }
 
@@ -373,10 +574,17 @@ export function useChatSocket({
     [activeRoomId, isConnected, translationDirection, userName]
   );
 
+  const isCreatingRoom = roomAction === "creating";
+  const isJoiningRoom = roomAction === "joining";
+  const isRoomActionPending = roomAction !== null;
+
   return {
     messages,
     isConnected,
-    isLoadingHistory,
+    isCreatingRoom,
+    isJoiningRoom,
+    isRoomActionPending,
+    roomActionError,
     isDeletingHistory,
     isSending,
     statusMessage,

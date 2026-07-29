@@ -237,7 +237,8 @@ sequenceDiagram
     Frontend->>Socket: create_room or join_room
     Socket->>DB: Create/resolve Room and Guest User
     DB-->>Socket: Room with invite token
-    Socket-->>Frontend: joined_room and room_history
+    Socket-->>Frontend: acknowledgement with room and history
+    Frontend->>Frontend: Commit active room after success
     User->>Frontend: Type and send message
     Frontend->>Frontend: Create pending message with clientMessageId
     Frontend->>Socket: send_message
@@ -691,6 +692,8 @@ Client to server:
 ```ts
 socket.emit("create_room", {
   userName: "user1"
+}, (response) => {
+  // { ok: true, room, messages } or { ok: false, error }
 });
 ```
 
@@ -700,6 +703,7 @@ Server behavior:
 - creates a secure Room ID and invite token
 - creates or reuses a guest User record
 - joins the socket to the new room
+- acknowledges success with the room and its message history, or failure with an error
 - emits `room_created`
 - emits `joined_room`
 - emits empty `room_history`
@@ -711,6 +715,8 @@ Client to server:
 ```ts
 socket.emit("join_room", {
   roomIdOrInvite: "invite-token-or-room-id"
+}, (response) => {
+  // { ok: true, room, messages } or { ok: false, error }
 });
 ```
 
@@ -718,11 +724,16 @@ Server behavior:
 
 - resolves the invite token or room ID against PostgreSQL
 - rejects missing or unknown rooms
-- leaves the previous active room if needed
-- stores the current room ID on `socket.data.roomId`
 - joins the requested room
+- leaves the previous active room once the new join succeeds
+- stores the current room ID on `socket.data.roomId`
+- acknowledges success with the room and its message history, or failure with an error
 - emits `joined_room` with room ID, display name, and invite token
 - emits `room_history`
+
+The frontend waits up to 10 seconds for this acknowledgement before changing
+the active room or replacing visible messages. A rejected or timed-out request
+keeps the previous room state and history visible.
 
 ### `send_message`
 

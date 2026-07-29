@@ -7,6 +7,19 @@ export type JoinedRoom = {
   inviteToken: string;
 };
 
+export type RoomAction = "creating" | "joining";
+
+export type RoomActionAcknowledgement =
+  | {
+      ok: true;
+      room: JoinedRoom;
+      messages: ChatMessage[];
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export type ChatMessage = {
   id: string;
   roomId: string;
