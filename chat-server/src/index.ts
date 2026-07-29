@@ -1,5 +1,5 @@
 import http from "node:http";
-import express from "express";
+import express, { type Request } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { Server } from "socket.io";
@@ -8,7 +8,10 @@ import {
   deleteRoomMessages,
   getRoomMessages
 } from "./services/messageRepository.js";
-import { getRoomById } from "./services/roomRepository.js";
+import {
+  getRoomByIdAndInviteToken,
+  type RoomSummary
+} from "./services/roomRepository.js";
 
 type StoredMessage = {
   id: string;
@@ -56,6 +59,47 @@ if (lanHost) {
 const port = Number(process.env.PORT ?? 4000);
 const adminActionsEnabled = process.env.ENABLE_ADMIN_ACTIONS === "true";
 
+function getBearerInviteToken(req: Request): string | null {
+  const authorization = req.header("authorization")?.trim();
+  if (!authorization) return null;
+
+  const match = /^Bearer\s+([a-zA-Z0-9_-]{1,128})$/i.exec(authorization);
+  return match?.[1] ?? null;
+}
+
+async function getAuthorizedRoom(
+  req: Request,
+  roomId: string
+): Promise<
+  | { ok: true; room: RoomSummary }
+  | { ok: false; status: 401 | 404; message: string }
+> {
+  const inviteToken = getBearerInviteToken(req);
+
+  if (!inviteToken) {
+    return {
+      ok: false,
+      status: 401,
+      message: "invite token is required"
+    };
+  }
+
+  const room = await getRoomByIdAndInviteToken(roomId, inviteToken);
+
+  if (!room) {
+    return {
+      ok: false,
+      status: 404,
+      message: "room not found or invite token is invalid"
+    };
+  }
+
+  return {
+    ok: true,
+    room
+  };
+}
+
 app.use(
   cors({
     origin: clientOrigins,
@@ -84,15 +128,19 @@ app.get("/rooms/:roomId/messages", async (req, res) => {
       return;
     }
 
-    const room = await getRoomById(roomId);
-    if (!room) {
-      res.status(404).json({
-        message: "room not found"
+    const access = await getAuthorizedRoom(req, roomId);
+    if (!access.ok) {
+      if (access.status === 401) {
+        res.setHeader("WWW-Authenticate", "Bearer");
+      }
+
+      res.status(access.status).json({
+        message: access.message
       });
       return;
     }
 
-    const messages = await getRoomMessages(room.id);
+    const messages = await getRoomMessages(access.room.id);
 
     res.json({
       messages: messages.map((message: StoredMessage) => ({
@@ -136,19 +184,23 @@ app.delete("/rooms/:roomId/messages", async (req, res) => {
       return;
     }
 
-    const room = await getRoomById(roomId);
-    if (!room) {
-      res.status(404).json({
-        message: "room not found"
+    const access = await getAuthorizedRoom(req, roomId);
+    if (!access.ok) {
+      if (access.status === 401) {
+        res.setHeader("WWW-Authenticate", "Bearer");
+      }
+
+      res.status(access.status).json({
+        message: access.message
       });
       return;
     }
 
-    const result = await deleteRoomMessages(room.id);
+    const result = await deleteRoomMessages(access.room.id);
 
     res.json({
       message: "messages deleted",
-      roomId: room.id,
+      roomId: access.room.id,
       deletedCount: result.count
     });
   } catch (error) {

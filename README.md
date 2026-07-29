@@ -120,7 +120,7 @@ TransChat focuses on keeping the user experience simple while making the interna
 - Room-based realtime messaging with Socket.IO
 - Server-created rooms backed by PostgreSQL
 - Secure room IDs and invite tokens generated with Node crypto APIs
-- Room creation and room joining from the UI
+- Invite-token-only room joining from the UI
 - Invite link copying with a secure invite token in the URL
 - Connection status display
 - Separate rendering for your messages and messages from other users
@@ -158,7 +158,7 @@ TransChat focuses on keeping the user experience simple while making the interna
 ### UI and Local Persistence
 
 - Dark/light mode
-- Local browser persistence for user name, room ID, theme, and translation direction
+- Local browser persistence for user name, room ID, invite token, theme, and translation direction
 - Local translation history for recently translated messages
 - Saved phrases for frequently used bilingual expressions
 - Automatic scroll-to-bottom for new messages
@@ -568,7 +568,10 @@ This value tells the browser where the Socket.IO chat server is running. When te
 - Change PostgreSQL user names and passwords before production use.
 - Do not commit real `.env` or `.env.local` files.
 - Use deployment secrets or a secret manager for production configuration.
-- The current Room/User model is a privacy foundation, but it is not a full authentication or authorization system yet.
+- Treat room IDs as identifiers, not secrets. Joining and reading history require the room's invite token.
+- Anyone who has an invite token can access that room, so share invite URLs only with intended participants.
+- Use HTTPS for internet-facing tests because invite tokens are bearer credentials. The frontend removes an invite token from the address bar after loading it.
+- The current Room/User model is a privacy foundation, but it is not a full user authentication or role-based authorization system.
 - In-memory rate limiting protects local demos but should be replaced with Redis-backed limiting for multi-instance production deployments.
 
 <p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
@@ -577,7 +580,7 @@ This value tells the browser where the Socket.IO chat server is running. When te
 
 1. Open `http://localhost:3000`.
 2. Enter a user name.
-3. Click `Create` to create a secure server-backed room, or paste a room ID / invite token and click `Join room`.
+3. Click `Create` to create a secure server-backed room, or paste an invite token and click `Join room`.
 4. Click `Copy invite` to share an invite URL with the active room token.
 5. Select translation direction:
    - `Auto detect`
@@ -631,7 +634,7 @@ Example response:
 ### Fetch Room History
 
 ```powershell
-curl.exe http://localhost:4000/rooms/5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44/messages
+curl.exe -H "Authorization: Bearer <invite-token>" http://localhost:4000/rooms/5d8b2f78-6b1e-4e9f-9b86-5e0f48c62c44/messages
 ```
 
 Example response:
@@ -679,7 +682,8 @@ To enable this endpoint in a trusted local/admin environment:
 ENABLE_ADMIN_ACTIONS=true
 ```
 
-When enabled, the endpoint keeps the existing room ID validation and deletes messages for the requested room.
+When enabled, the endpoint also requires
+`Authorization: Bearer <invite-token>` for the requested room.
 
 <p align="right"><a href="#readme-navigation">Back to Table of Contents</a></p>
 
@@ -714,7 +718,7 @@ Client to server:
 
 ```ts
 socket.emit("join_room", {
-  roomIdOrInvite: "invite-token-or-room-id"
+  inviteToken: "invite-token"
 }, (response) => {
   // { ok: true, room, messages } or { ok: false, error }
 });
@@ -722,8 +726,8 @@ socket.emit("join_room", {
 
 Server behavior:
 
-- resolves the invite token or room ID against PostgreSQL
-- rejects missing or unknown rooms
+- resolves the invite token against PostgreSQL
+- rejects missing or unknown invite tokens
 - joins the requested room
 - leaves the previous active room once the new join succeeds
 - stores the current room ID on `socket.data.roomId`
@@ -933,7 +937,8 @@ The system validates input at multiple boundaries:
 - frontend form validation
 - Socket.IO message payload validation
 - FastAPI schema validation for text length and supported languages
-- room ID and invite token validation for room joins and history APIs
+- invite-token authorization for room joins and room-specific REST APIs
+- current Socket.IO room membership checks before message sending
 
 ### Security Guard for Destructive API
 
@@ -946,7 +951,7 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 - Server-created rooms with secure UUID room IDs and invite tokens
 - Guest User model and Message-to-Room/User relationships in Prisma
 - No automatic fallback to `room1`
-- Invite links based on secure invite tokens
+- Invite-token-only room joins and protected room-history access
 - Async translation flow with `receive_message` followed by `message_updated`
 - Translation status tracking with `pending`, `completed`, and `failed`
 - In-memory message rate limiting for sockets and rooms
@@ -960,7 +965,8 @@ Room-history deletion is intentionally disabled by default. This avoids exposing
 ## Known Limitations
 
 - Authentication and user authorization are not implemented yet.
-- Room invite tokens are required for invite links, but there is not yet a full membership table or per-user authorization policy.
+- Invite tokens are bearer permissions and cannot currently be rotated or revoked.
+- There is no membership table or per-user role policy because guest display names are not authenticated identities.
 - Rate limiting is in-memory, so it resets on server restart and is not shared across multiple server instances.
 - The current language focus is English and Japanese.
 - Argos Translate quality can vary, especially for short phrases, informal chat text, and ambiguous wording.

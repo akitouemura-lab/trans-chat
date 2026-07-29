@@ -74,13 +74,13 @@ export function RoomControls({
 
         <label className="flex flex-col gap-1">
           <span className={"text-sm " + mutedTextClass}>
-            Room ID / invite token
+            Invite token
           </span>
           <input
             className={"rounded-lg border px-3 py-2 outline-none " + inputClass}
             value={roomInput}
             maxLength={128}
-            placeholder="Create a room or paste an invite token"
+            placeholder="Paste an invite token"
             onChange={(event) => onRoomInputChange(event.target.value)}
           />
         </label>
