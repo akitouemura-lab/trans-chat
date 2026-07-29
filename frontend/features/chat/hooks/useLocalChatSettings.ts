@@ -44,13 +44,17 @@ function getInitialUserName(): string {
 
 function getInitialRoomId(): string {
   const params = getUrlSearchParams();
-  const roomFromUrl = params?.get("room") ?? null;
   const inviteFromUrl = params?.get("invite") ?? null;
   const roomFromStorage = getStoredValue(ROOM_ID_KEY);
+  const inviteFromStorage = getStoredValue(INVITE_TOKEN_KEY);
 
-  if (isUsableRoomId(roomFromUrl)) return roomFromUrl.trim();
   if (isUsableInviteToken(inviteFromUrl)) return "";
-  if (isUsableRoomId(roomFromStorage)) return roomFromStorage.trim();
+  if (
+    isUsableRoomId(roomFromStorage) &&
+    isUsableInviteToken(inviteFromStorage)
+  ) {
+    return roomFromStorage.trim();
+  }
 
   return "";
 }
@@ -67,10 +71,7 @@ function getInitialInviteToken(): string {
 }
 
 function getInitialRoomInput(): string {
-  const initialRoomId = getInitialRoomId();
-  const initialInviteToken = getInitialInviteToken();
-
-  return initialRoomId || initialInviteToken;
+  return getInitialInviteToken();
 }
 
 function getInitialTheme(): boolean {
@@ -115,12 +116,6 @@ export function useLocalChatSettings() {
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.delete("room");
     nextUrl.searchParams.delete("invite");
-
-    if (activeInviteToken) {
-      nextUrl.searchParams.set("invite", activeInviteToken);
-    } else if (activeRoomId) {
-      nextUrl.searchParams.set("room", activeRoomId);
-    }
 
     window.history.replaceState(null, "", nextUrl.toString());
   }, [activeInviteToken, activeRoomId]);

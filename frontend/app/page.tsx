@@ -32,7 +32,7 @@ export default function Home() {
     (room: { roomId: string; inviteToken: string }) => {
       setActiveRoomId(room.roomId);
       setActiveInviteToken(room.inviteToken);
-      setRoomInput(room.roomId);
+      setRoomInput("");
     },
     [setActiveInviteToken, setActiveRoomId, setRoomInput]
   );

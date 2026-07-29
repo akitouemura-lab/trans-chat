@@ -300,45 +300,22 @@ function emitMessageStatus(
 async function resolveRoomFromJoinPayload(
   payload: unknown
 ): Promise<RoomSummary | null> {
+  let inviteToken = "";
+
   if (typeof payload === "string") {
-    const value = payload.trim();
-    if (value.length === 0) return null;
-
-    const tokenError = validateInviteToken(value);
-    if (!tokenError) {
-      const roomByToken = await getRoomByInviteToken(value);
-      if (roomByToken) return roomByToken;
+    inviteToken = payload.trim();
+  } else if (isRecord(payload)) {
+    if (typeof payload.inviteToken === "string") {
+      inviteToken = payload.inviteToken.trim();
+    } else if (typeof payload.roomIdOrInvite === "string") {
+      // Backward-compatible field name; its value is still token-only.
+      inviteToken = payload.roomIdOrInvite.trim();
     }
-
-    const roomError = validateRoomId(value);
-    if (!roomError) return getRoomById(value);
-
-    return null;
   }
 
-  if (!isRecord(payload)) return null;
+  if (validateInviteToken(inviteToken) !== null) return null;
 
-  const inviteToken =
-    typeof payload.inviteToken === "string" ? payload.inviteToken.trim() : "";
-  const roomId = typeof payload.roomId === "string" ? payload.roomId.trim() : "";
-  const roomIdOrInvite =
-    typeof payload.roomIdOrInvite === "string"
-      ? payload.roomIdOrInvite.trim()
-      : "";
-
-  if (inviteToken.length > 0 && validateInviteToken(inviteToken) === null) {
-    return getRoomByInviteToken(inviteToken);
-  }
-
-  if (roomId.length > 0 && validateRoomId(roomId) === null) {
-    return getRoomById(roomId);
-  }
-
-  if (roomIdOrInvite.length > 0) {
-    return resolveRoomFromJoinPayload(roomIdOrInvite);
-  }
-
-  return null;
+  return getRoomByInviteToken(inviteToken);
 }
 
 async function joinSocketToRoom(
@@ -509,7 +486,7 @@ export function registerSocketHandlers(io: Server) {
         clientMessageId
       } = validation.value;
 
-      if (socket.data.roomId !== roomId) {
+      if (socket.data.roomId !== roomId || !socket.rooms.has(roomId)) {
         socket.emit("error_message", "Join the room before sending a message.");
         emitMessageStatus(socket, clientMessageId, "error");
         return;

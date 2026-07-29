@@ -251,15 +251,6 @@ export function useChatSocket({
           },
           "restore"
         );
-      } else if (activeRoomRef.current) {
-        requestRoomAction(
-          socket,
-          "join_room",
-          {
-            roomId: activeRoomRef.current
-          },
-          "restore"
-        );
       } else {
         setStatusMessage("Connected. Create a room or join with an invite.");
       }
@@ -381,7 +372,7 @@ export function useChatSocket({
   }, [requestRoomAction]);
 
   const joinRoom = useCallback(
-    (targetRoomIdOrInvite: string) => {
+    (targetInviteToken: string) => {
       const socket = socketRef.current;
 
       if (!socket || !socket.connected) {
@@ -393,12 +384,11 @@ export function useChatSocket({
 
       if (roomActionRef.current) return;
 
-      const trimmedValue = targetRoomIdOrInvite.trim();
-      const roomError = validateRoomId(trimmedValue);
+      const trimmedValue = targetInviteToken.trim();
       const inviteError = validateInviteToken(trimmedValue);
 
-      if (roomError && inviteError) {
-        const message = "Enter a valid room ID or invite token.";
+      if (inviteError) {
+        const message = "Enter a valid invite token.";
         setRoomActionError(message);
         setStatusMessage(message);
         return;
@@ -408,7 +398,7 @@ export function useChatSocket({
         socket,
         "join_room",
         {
-          roomIdOrInvite: trimmedValue
+          inviteToken: trimmedValue
         },
         "join"
       );
@@ -457,7 +447,9 @@ export function useChatSocket({
       ? validateRoomId(activeRoomId)
       : "Room ID is required.";
 
-    if (roomError) {
+    const inviteError = validateInviteToken(activeInviteToken);
+
+    if (roomError || inviteError) {
       setStatusMessage("Create or join a room before deleting history.");
       return;
     }
@@ -477,7 +469,10 @@ export function useChatSocket({
           encodeURIComponent(activeRoomId) +
           "/messages",
         {
-          method: "DELETE"
+          method: "DELETE",
+          headers: {
+            Authorization: "Bearer " + activeInviteToken
+          }
         }
       );
 
@@ -502,7 +497,7 @@ export function useChatSocket({
     } finally {
       setIsDeletingHistory(false);
     }
-  }, [activeRoomId]);
+  }, [activeInviteToken, activeRoomId]);
 
   const sendMessage = useCallback(
     (messageText: string): boolean => {
@@ -520,7 +515,8 @@ export function useChatSocket({
       const trimmedText = messageText.trim();
 
       const roomError = validateRoomId(activeRoomId);
-      if (!activeRoomId || roomError) {
+      const inviteError = validateInviteToken(activeInviteToken);
+      if (!activeRoomId || roomError || inviteError) {
         setStatusMessage("Create or join a room before sending a message.");
         return false;
       }
@@ -571,7 +567,13 @@ export function useChatSocket({
 
       return true;
     },
-    [activeRoomId, isConnected, translationDirection, userName]
+    [
+      activeInviteToken,
+      activeRoomId,
+      isConnected,
+      translationDirection,
+      userName
+    ]
   );
 
   const isCreatingRoom = roomAction === "creating";

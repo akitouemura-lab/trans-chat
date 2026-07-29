@@ -46,6 +46,18 @@ export async function getRoomByInviteToken(
   });
 }
 
+export async function getRoomByIdAndInviteToken(
+  roomId: string,
+  inviteToken: string
+): Promise<RoomSummary | null> {
+  return prisma.room.findFirst({
+    where: {
+      id: roomId,
+      inviteToken
+    }
+  });
+}
+
 export async function createOrGetGuestUser(
   displayName: string
 ): Promise<GuestUser> {
