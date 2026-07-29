@@ -52,7 +52,10 @@ export default function Home() {
   const {
     messages,
     isConnected,
-    isLoadingHistory,
+    isCreatingRoom,
+    isJoiningRoom,
+    isRoomActionPending,
+    roomActionError,
     isDeletingHistory,
     isSending,
     statusMessage,
@@ -111,7 +114,9 @@ export default function Home() {
           inviteLink={inviteLink}
           inviteStatusMessage={inviteStatusMessage}
           isConnected={isConnected}
-          isLoadingHistory={isLoadingHistory}
+          isCreatingRoom={isCreatingRoom}
+          isJoiningRoom={isJoiningRoom}
+          roomActionError={roomActionError}
           isDeletingHistory={isDeletingHistory}
           statusMessage={statusMessage}
           panelClass={panelClass}
@@ -157,6 +162,7 @@ export default function Home() {
           activeRoomId={activeRoomId}
           isConnected={isConnected}
           isSending={isSending}
+          isRoomActionPending={isRoomActionPending}
           isDarkMode={isDarkMode}
           inputClass={inputClass}
           mutedTextClass={mutedTextClass}

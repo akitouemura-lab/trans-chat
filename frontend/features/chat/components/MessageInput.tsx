@@ -5,6 +5,7 @@ type MessageInputProps = {
   activeRoomId: string;
   isConnected: boolean;
   isSending: boolean;
+  isRoomActionPending: boolean;
   isDarkMode: boolean;
   inputClass: string;
   mutedTextClass: string;
@@ -17,6 +18,7 @@ export function MessageInput({
   activeRoomId,
   isConnected,
   isSending,
+  isRoomActionPending,
   isDarkMode,
   inputClass,
   mutedTextClass,
@@ -47,7 +49,9 @@ export function MessageInput({
         <input
           className={"flex-1 rounded-xl border px-4 py-3 outline-none " + inputClass}
           placeholder={
-            hasActiveRoom
+            isRoomActionPending
+              ? "Wait for the room action to finish..."
+              : hasActiveRoom
               ? "Type a message..."
               : "Create or join a room before sending."
           }
@@ -59,7 +63,11 @@ export function MessageInput({
         <button
           type="submit"
           disabled={
-            !isConnected || !hasActiveRoom || isSending || text.trim().length === 0
+            !isConnected ||
+            !hasActiveRoom ||
+            isSending ||
+            isRoomActionPending ||
+            text.trim().length === 0
           }
           className="rounded-xl bg-blue-500 px-6 py-3 font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-500"
         >

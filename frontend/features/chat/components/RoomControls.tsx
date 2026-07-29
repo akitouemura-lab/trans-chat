@@ -9,7 +9,9 @@ type RoomControlsProps = {
   inviteLink: string;
   inviteStatusMessage: string;
   isConnected: boolean;
-  isLoadingHistory: boolean;
+  isCreatingRoom: boolean;
+  isJoiningRoom: boolean;
+  roomActionError: string;
   isDeletingHistory: boolean;
   statusMessage: string;
   panelClass: string;
@@ -32,7 +34,9 @@ export function RoomControls({
   inviteLink,
   inviteStatusMessage,
   isConnected,
-  isLoadingHistory,
+  isCreatingRoom,
+  isJoiningRoom,
+  roomActionError,
   isDeletingHistory,
   statusMessage,
   panelClass,
@@ -46,12 +50,13 @@ export function RoomControls({
   onCopyInviteLink,
   onDeleteHistory
 }: RoomControlsProps) {
-  const visibleStatusMessage = inviteStatusMessage
-    ? inviteStatusMessage
-    : isLoadingHistory
-      ? "Loading room history..."
-      : statusMessage;
-  const canJoinRoom = roomInput.trim().length > 0 && !isLoadingHistory;
+  const isRoomActionPending = isCreatingRoom || isJoiningRoom;
+  const visibleStatusMessage = isCreatingRoom
+    ? "Creating room..."
+    : isJoiningRoom
+      ? "Joining room..."
+      : roomActionError || inviteStatusMessage || statusMessage;
+  const canJoinRoom = roomInput.trim().length > 0 && !isRoomActionPending;
   const hasActiveRoom = activeRoomId.trim().length > 0;
 
   return (
@@ -103,16 +108,16 @@ export function RoomControls({
           disabled={!isConnected || !canJoinRoom}
           className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-500"
         >
-          {isLoadingHistory ? "Joining..." : "Join room"}
+          {isJoiningRoom ? "Joining..." : "Join room"}
         </button>
 
         <button
           type="button"
           onClick={onCreateRoom}
-          disabled={!isConnected || isLoadingHistory}
+          disabled={!isConnected || isRoomActionPending}
           className="rounded-lg border border-blue-500 px-4 py-2 font-semibold text-blue-400 hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:border-slate-500 disabled:text-slate-500"
         >
-          Create
+          {isCreatingRoom ? "Creating..." : "Create"}
         </button>
 
         <button
@@ -135,7 +140,14 @@ export function RoomControls({
                 : "h-2 w-2 rounded-full bg-red-400"
             }
           />
-          <span className={mutedTextClass}>
+          <span
+            aria-live="polite"
+            className={
+              roomActionError && !isRoomActionPending
+                ? "text-red-400"
+                : mutedTextClass
+            }
+          >
             {visibleStatusMessage}
           </span>
         </div>
@@ -143,7 +155,9 @@ export function RoomControls({
         <button
           type="button"
           onClick={onDeleteHistory}
-          disabled={!hasActiveRoom || isDeletingHistory}
+          disabled={
+            !hasActiveRoom || isDeletingHistory || isRoomActionPending
+          }
           className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-red-900"
         >
           {isDeletingHistory ? "Deleting..." : "Delete room history"}
