@@ -1,4 +1,6 @@
 import time
+from dataclasses import dataclass
+from typing import Protocol
 
 import argostranslate.translate
 
@@ -11,6 +13,50 @@ SUPPORTED_PAIRS = [
 
 class MissingLanguageModelError(RuntimeError):
     pass
+
+
+class TranslationProvider(Protocol):
+    name: str
+
+    def get_installed_pairs(self) -> set[tuple[str, str]]:
+        ...
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        ...
+
+
+class ArgosTranslationProvider:
+    name = "argos"
+
+    def get_installed_pairs(self) -> set[tuple[str, str]]:
+        installed_languages = argostranslate.translate.get_installed_languages()
+        installed_pairs: set[tuple[str, str]] = set()
+
+        for source_lang in installed_languages:
+            for target_lang in installed_languages:
+                translation = source_lang.get_translation(target_lang)
+                if translation is not None:
+                    installed_pairs.add((source_lang.code, target_lang.code))
+
+        return installed_pairs
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        return argostranslate.translate.translate(
+            text,
+            source_lang,
+            target_lang,
+        )
+
+
+@dataclass(frozen=True)
+class TranslationResult:
+    translated_text: str
+    translation_ms: int
+    source_lang: str
+    provider: str
+
+
+DEFAULT_TRANSLATION_PROVIDER: TranslationProvider = ArgosTranslationProvider()
 
 
 def detect_language_simple(text: str) -> str:
@@ -40,40 +86,46 @@ def detect_language_simple(text: str) -> str:
     return "en"
 
 
-def get_installed_pairs() -> set[tuple[str, str]]:
-    installed_languages = argostranslate.translate.get_installed_languages()
-    installed_pairs: set[tuple[str, str]] = set()
-
-    for source_lang in installed_languages:
-        for target_lang in installed_languages:
-            translation = source_lang.get_translation(target_lang)
-            if translation is not None:
-                installed_pairs.add((source_lang.code, target_lang.code))
-
-    return installed_pairs
+def get_installed_pairs(
+    provider: TranslationProvider = DEFAULT_TRANSLATION_PROVIDER,
+) -> set[tuple[str, str]]:
+    return provider.get_installed_pairs()
 
 
-def get_missing_pairs() -> list[tuple[str, str]]:
-    installed_pairs = get_installed_pairs()
+def get_missing_pairs(
+    provider: TranslationProvider = DEFAULT_TRANSLATION_PROVIDER,
+) -> list[tuple[str, str]]:
+    installed_pairs = get_installed_pairs(provider)
     return [pair for pair in SUPPORTED_PAIRS if pair not in installed_pairs]
 
 
-def are_required_packages_installed() -> bool:
-    return len(get_missing_pairs()) == 0
+def are_required_packages_installed(
+    provider: TranslationProvider = DEFAULT_TRANSLATION_PROVIDER,
+) -> bool:
+    return len(get_missing_pairs(provider)) == 0
 
 
-def ensure_translation_pair_installed(source_lang: str, target_lang: str) -> None:
+def ensure_translation_pair_installed(
+    source_lang: str,
+    target_lang: str,
+    provider: TranslationProvider = DEFAULT_TRANSLATION_PROVIDER,
+) -> None:
     if source_lang == target_lang:
         return
 
-    if (source_lang, target_lang) not in get_installed_pairs():
+    if (source_lang, target_lang) not in get_installed_pairs(provider):
         raise MissingLanguageModelError(
-            "Missing Argos model for " + source_lang + " -> " + target_lang
+            "Missing translation model for " + source_lang + " -> " + target_lang
         )
 
 
-def translate_text(text: str, source_lang: str, target_lang: str) -> tuple[str, int, str]:
-    """Translate text and return translated text, elapsed milliseconds, and source language."""
+def translate_text(
+    text: str,
+    source_lang: str,
+    target_lang: str,
+    provider: TranslationProvider = DEFAULT_TRANSLATION_PROVIDER,
+) -> TranslationResult:
+    """Translate text and return output plus routing and provider metadata."""
     start_time = time.perf_counter()
 
     actual_source_lang = source_lang
@@ -82,15 +134,29 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> tuple[str, 
 
     if actual_source_lang == target_lang:
         elapsed_ms = int((time.perf_counter() - start_time) * 1000)
-        return text, elapsed_ms, actual_source_lang
+        return TranslationResult(
+            translated_text=text,
+            translation_ms=elapsed_ms,
+            source_lang=actual_source_lang,
+            provider=provider.name,
+        )
 
-    ensure_translation_pair_installed(actual_source_lang, target_lang)
+    ensure_translation_pair_installed(
+        actual_source_lang,
+        target_lang,
+        provider,
+    )
 
-    translated_text = argostranslate.translate.translate(
+    translated_text = provider.translate(
         text,
         actual_source_lang,
         target_lang,
     )
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
-    return translated_text, elapsed_ms, actual_source_lang
+    return TranslationResult(
+        translated_text=translated_text,
+        translation_ms=elapsed_ms,
+        source_lang=actual_source_lang,
+        provider=provider.name,
+    )
