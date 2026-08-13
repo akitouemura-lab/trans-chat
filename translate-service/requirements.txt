@@ -1,4 +1,5 @@
 ﻿fastapi
 uvicorn[standard]
 pydantic
-argostranslate
+# Argos 1.11 pins a Stanza runtime compatible with current v1.1 model metadata.
+argostranslate==1.11.0
