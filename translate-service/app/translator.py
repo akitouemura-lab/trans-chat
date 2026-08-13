@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 import argostranslate.translate
 
@@ -9,10 +9,41 @@ SUPPORTED_PAIRS = [
     ("en", "ja"),
     ("ja", "en"),
 ]
+MIN_NON_TRIVIAL_INPUT_LENGTH = 12
+MAX_SUSPICIOUS_OUTPUT_LENGTH = 3
 
 
 class MissingLanguageModelError(RuntimeError):
     pass
+
+
+TranslationWarningCode = Literal[
+    "unchanged_output",
+    "suspiciously_short_output",
+]
+TranslationIssueCode = Literal[
+    "empty_output",
+    "unchanged_output",
+    "suspiciously_short_output",
+]
+
+
+@dataclass(frozen=True)
+class TranslationWarning:
+    code: TranslationWarningCode
+    message: str
+
+
+class InvalidTranslationOutputError(RuntimeError):
+    def __init__(
+        self,
+        code: TranslationIssueCode,
+        message: str,
+        translated_text: str,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.translated_text = translated_text
 
 
 class TranslationProvider(Protocol):
@@ -54,6 +85,7 @@ class TranslationResult:
     translation_ms: int
     source_lang: str
     provider: str
+    warning: TranslationWarning | None = None
 
 
 DEFAULT_TRANSLATION_PROVIDER: TranslationProvider = ArgosTranslationProvider()
@@ -119,6 +151,57 @@ def ensure_translation_pair_installed(
         )
 
 
+def _normalize_for_comparison(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _content_length(text: str) -> int:
+    return sum(1 for char in text if char.isalnum())
+
+
+def validate_translation_output(
+    input_text: str,
+    translated_text: str,
+    source_lang: str,
+    target_lang: str,
+) -> TranslationWarning | None:
+    """Reject broken output and flag conservative quality warning signals."""
+    if not translated_text.strip():
+        raise InvalidTranslationOutputError(
+            "empty_output",
+            "Translation provider returned empty text.",
+            translated_text,
+        )
+
+    if source_lang == target_lang:
+        return None
+
+    if _normalize_for_comparison(input_text) == _normalize_for_comparison(
+        translated_text
+    ):
+        return TranslationWarning(
+            code="unchanged_output",
+            message=(
+                "Translation output matches the input although the source and "
+                "target languages differ."
+            ),
+        )
+
+    input_length = _content_length(input_text)
+    output_length = _content_length(translated_text)
+
+    if (
+        input_length >= MIN_NON_TRIVIAL_INPUT_LENGTH
+        and output_length <= MAX_SUSPICIOUS_OUTPUT_LENGTH
+    ):
+        return TranslationWarning(
+            code="suspiciously_short_output",
+            message="Translation output is unusually short compared with the input.",
+        )
+
+    return None
+
+
 def translate_text(
     text: str,
     source_lang: str,
@@ -152,6 +235,12 @@ def translate_text(
         actual_source_lang,
         target_lang,
     )
+    warning = validate_translation_output(
+        text,
+        translated_text,
+        actual_source_lang,
+        target_lang,
+    )
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
     return TranslationResult(
@@ -159,4 +248,5 @@ def translate_text(
         translation_ms=elapsed_ms,
         source_lang=actual_source_lang,
         provider=provider.name,
+        warning=warning,
     )

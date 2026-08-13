@@ -1,9 +1,14 @@
 import logging
 
 from fastapi import FastAPI, HTTPException
-from app.schemas import TranslateRequest, TranslateResponse
+from app.schemas import (
+    TranslateRequest,
+    TranslateResponse,
+    TranslationWarningResponse,
+)
 from app.translator import (
     DEFAULT_TRANSLATION_PROVIDER,
+    InvalidTranslationOutputError,
     MissingLanguageModelError,
     are_required_packages_installed,
     get_missing_pairs,
@@ -55,8 +60,25 @@ def translate(request: TranslateRequest) -> TranslateResponse:
             target_lang=request.target_lang,
             translation_ms=result.translation_ms,
             provider=result.provider,
+            warning=(
+                TranslationWarningResponse(
+                    code=result.warning.code,
+                    message=result.warning.message,
+                )
+                if result.warning is not None
+                else None
+            ),
         )
 
+    except InvalidTranslationOutputError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": error.code,
+                "message": str(error),
+                "provider": DEFAULT_TRANSLATION_PROVIDER.name,
+            },
+        ) from error
     except MissingLanguageModelError as error:
         raise HTTPException(
             status_code=503,

@@ -9,9 +9,15 @@ class TranslateRequest(BaseModel):
     target_lang: Literal["en", "ja"] = Field(default="ja")
 
 
+class TranslationWarningResponse(BaseModel):
+    code: Literal["unchanged_output", "suspiciously_short_output"]
+    message: str
+
+
 class TranslateResponse(BaseModel):
     translated_text: str
     source_lang: str
     target_lang: str
     translation_ms: int
     provider: str
+    warning: TranslationWarningResponse | None = None
