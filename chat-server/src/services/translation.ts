@@ -3,10 +3,14 @@ export type SourceLang = TargetLang | "auto";
 
 type TranslateResponse = {
   translated_text: string;
-  source_lang: string;
+  source_lang: TargetLang;
   target_lang: TargetLang;
   translation_ms: number;
   provider: string;
+  warning: {
+    code: TranslationOutputIssueCode;
+    message: string;
+  } | null;
 };
 
 type TranslateOptions = {
@@ -29,7 +33,13 @@ export type TranslationErrorCode =
   | "service_unavailable"
   | "service_error"
   | "invalid_response"
-  | "missing_model";
+  | "missing_model"
+  | TranslationOutputIssueCode;
+
+type TranslationOutputIssueCode =
+  | "empty_output"
+  | "unchanged_output"
+  | "suspiciously_short_output";
 
 type CachedTranslation = {
   translatedText: string;
@@ -111,6 +121,30 @@ function isTargetLang(value: unknown): value is TargetLang {
   return value === "ja" || value === "en";
 }
 
+function isTranslationOutputIssueCode(
+  value: unknown
+): value is TranslationOutputIssueCode {
+  return (
+    value === "empty_output" ||
+    value === "unchanged_output" ||
+    value === "suspiciously_short_output"
+  );
+}
+
+function isTranslationWarning(
+  value: unknown
+): value is TranslateResponse["warning"] {
+  if (value === null) return true;
+  if (typeof value !== "object") return false;
+
+  const warning = value as Record<string, unknown>;
+  return (
+    isTranslationOutputIssueCode(warning.code) &&
+    typeof warning.message === "string" &&
+    warning.message.length > 0
+  );
+}
+
 function isTranslateResponse(value: unknown): value is TranslateResponse {
   if (typeof value !== "object" || value === null) return false;
 
@@ -118,12 +152,13 @@ function isTranslateResponse(value: unknown): value is TranslateResponse {
 
   return (
     typeof data.translated_text === "string" &&
-    typeof data.source_lang === "string" &&
+    isTargetLang(data.source_lang) &&
     isTargetLang(data.target_lang) &&
     typeof data.translation_ms === "number" &&
     Number.isFinite(data.translation_ms) &&
     typeof data.provider === "string" &&
-    data.provider.length > 0
+    data.provider.length > 0 &&
+    isTranslationWarning(data.warning)
   );
 }
 
@@ -210,6 +245,20 @@ export async function translateMessage(
         ) {
           errorCode = "missing_model";
           errorMessage = "Required translation model is not installed.";
+        } else if (
+          response.status === 502 &&
+          typeof body.detail === "object" &&
+          body.detail !== null
+        ) {
+          const detail = body.detail as Record<string, unknown>;
+
+          if (
+            isTranslationOutputIssueCode(detail.code) &&
+            typeof detail.message === "string"
+          ) {
+            errorCode = detail.code;
+            errorMessage = detail.message;
+          }
         }
       } catch {
         // Keep the generic service error.
@@ -227,6 +276,15 @@ export async function translateMessage(
         targetLang,
         "invalid_response",
         "Translation service returned an invalid response."
+      );
+    }
+
+    if (data.warning !== null) {
+      return createFallbackResult(
+        data.source_lang,
+        data.target_lang,
+        data.warning.code,
+        data.warning.message
       );
     }
 

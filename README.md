@@ -856,8 +856,8 @@ python scripts/evaluate_translations.py
 
 The automated tests use a lightweight fake provider and do not download Argos
 models. `evaluate_translations.py` requires the local models and prints the
-dataset inputs, current Argos outputs, and any per-case runtime errors for
-human comparison.
+dataset inputs, current Argos outputs, success status, and any per-case quality
+warnings or runtime errors for human comparison.
 
 ### Docker Compose Validation
 
@@ -923,6 +923,11 @@ contracts without defining one exact translation as universally correct.
 ### Translation Timeout and Safe Fallback
 
 The chat server wraps translation requests with `AbortController`. Timeout, network failure, non-OK responses, invalid responses, and missing language models produce user-safe translation failure states instead of crashing the socket handler.
+
+The translation service rejects empty provider output and marks unchanged or
+extremely short cross-language output as suspicious. The chat server does not
+cache or display suspicious output as a completed translation; the original
+message remains available with a translation failure reason.
 
 Fallback shape:
 

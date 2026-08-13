@@ -11,6 +11,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 from app.translator import (  # noqa: E402
     DEFAULT_TRANSLATION_PROVIDER,
+    InvalidTranslationOutputError,
     get_missing_pairs,
     translate_text,
 )
@@ -36,6 +37,8 @@ def evaluate() -> int:
     dataset = load_dataset()
     results: list[dict[str, object]] = []
     failure_count = 0
+    warning_count = 0
+    success_count = 0
 
     for case in dataset["cases"]:
         result: dict[str, object] = {
@@ -54,18 +57,49 @@ def evaluate() -> int:
             )
             result.update(
                 {
+                    "success": translation.warning is None,
+                    "status": (
+                        "warning" if translation.warning is not None else "success"
+                    ),
                     "actualSourceLang": translation.source_lang,
                     "output": translation.translated_text,
                     "translationMs": translation.translation_ms,
                     "provider": translation.provider,
                 }
             )
+            if translation.warning is not None:
+                warning_count += 1
+                result.update(
+                    {
+                        "warningCode": translation.warning.code,
+                        "warningReason": translation.warning.message,
+                    }
+                )
+            else:
+                success_count += 1
+        except InvalidTranslationOutputError as error:
+            failure_count += 1
+            result.update(
+                {
+                    "success": False,
+                    "status": "error",
+                    "output": error.translated_text,
+                    "errorType": type(error).__name__,
+                    "errorCode": error.code,
+                    "errorReason": str(error),
+                    "provider": DEFAULT_TRANSLATION_PROVIDER.name,
+                }
+            )
         except Exception as error:
             failure_count += 1
             result.update(
                 {
+                    "success": False,
+                    "status": "error",
+                    "output": None,
                     "errorType": type(error).__name__,
-                    "error": str(error),
+                    "errorCode": "provider_runtime_error",
+                    "errorReason": str(error),
                     "provider": DEFAULT_TRANSLATION_PROVIDER.name,
                 }
             )
@@ -77,6 +111,8 @@ def evaluate() -> int:
             {
                 "datasetVersion": dataset["version"],
                 "provider": DEFAULT_TRANSLATION_PROVIDER.name,
+                "successCount": success_count,
+                "warningCount": warning_count,
                 "failureCount": failure_count,
                 "results": results,
             },
